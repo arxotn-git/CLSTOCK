@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>재고 소진 예상일 관리 시스템</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- SheetJS (Excel Parsing & Exporting) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        .glass-effect { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+        
+        /* 스크롤바 커스텀 (테이블 영역) */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+
+    <script>
+        Babel.registerPreset('react-classic', {
+            presets: [
+                [Babel.availablePresets.react, { runtime: 'classic' }]
+            ]
+        });
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module" data-presets="react-classic">
+        const { useState, useEffect, useMemo } = React;
+
+        const App = () => {
+            const [isAuthenticated, setIsAuthenticated] = useState(() => {
+                return localStorage.getItem('inventory_auth_pin') === 'true';
+            });
+            const [pin, setPin] = useState("");
+            const [errorMsg, setErrorMsg] = useState("");
+            
+            const [firebaseUser, setFirebaseUser] = useState(null);
+            const [firebaseRefs, setFirebaseRefs] = useState(null);
+            const [histories, setHistories] = useState([]);
+            const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+            const [isUploading, setIsUploading] = useState(false);
+            
+            // 토글 상태
+            const [showWarningOnly, setShowWarningOnly] = useState(false);
+
+            // 파이어베이스 초기화
+            useEffect(() => {
+                let isMounted = true;
+                const initFirebase = async () => {
+                    try {
+                        const firebaseConfig = {
+                            apiKey: "AIzaSyBoJ8xKhYkr1hyTOJlRaPwGFjVoZIuK9Sw",
+                            authDomain: "clstpock.firebaseapp.com",
+                            projectId: "clstpock",
+                            storageBucket: "clstpock.firebasestorage.app",
+                            messagingSenderId: "14396365208",
+                            appId: "1:14396365208:web:89625d54c26868e06533ed",
+                            measurementId: "G-ZFWM8LBF12"
+                        };
+
+                        const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
+                        const { getAuth, signInAnonymously, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+                        const { getFirestore, collection, onSnapshot, addDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+
+                        const app = initializeApp(firebaseConfig);
+                        const auth = getAuth(app);
+                        const db = getFirestore(app);
+                        const appId = 'inventory-tracker-01'; 
+
+                        if (isMounted) {
+                            setFirebaseRefs({ db, appId, collection, onSnapshot, addDoc });
+                        }
+
+                        await signInAnonymously(auth);
+                        
+                        onAuthStateChanged(auth, (user) => {
+                            if (isMounted) setFirebaseUser(user);
+                        });
+                    } catch (err) {
+                        console.error("Firebase init error:", err);
+                        alert("데이터베이스 연결에 실패했습니다. 콘솔을 확인해주세요.");
+                    }
+                };
+                initFirebase();
+                return () => { isMounted = false; };
+            }, []);
+
+            // 데이터 불러오기
+            useEffect(() => {
+                if (!firebaseUser || !firebaseRefs) return;
+
+                const { db, appId, collection, onSnapshot } = firebaseRefs;
+                const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'inventory_history');
+
+                const unsubscribe = onSnapshot(collRef, (snapshot) => {
+                    const data = [];
+                    snapshot.forEach((doc) => {
+                        data.push({ id: doc.id, ...doc.data() });
+                    });
+                    
+                    data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    
+                    setHistories(data);
+                    if (data.length > 0 && !selectedHistoryId) {
+                        setSelectedHistoryId(data[0].id);
+                    }
+                }, (error) => {
+                    console.error("Fetch error:", error);
+                });
+
+                return () => unsubscribe();
+            }, [firebaseUser, selectedHistoryId, firebaseRefs]);
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (pin === "0501") {
+                    setIsAuthenticated(true);
+                    localStorage.setItem('inventory_auth_pin', 'true');
+                } else {
+                    setErrorMsg("비밀번호가 일치하지 않습니다.");
+                    setPin("");
+                }
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                setIsUploading(true);
+
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                    try {
+                        const bstr = evt.target.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+                        if (rawData.length < 2) {
+                            alert("데이터가 충분하지 않습니다.");
+                            setIsUploading(false);
+                            return;
+                        }
+
+                        const headerRow = rawData[0];
+                        let period = parseInt(String(headerRow[2]).replace(/[^0-9]/g, ''));
+                        if (isNaN(period) || period <= 0) period = 30; 
+
+                        const parsedItems = [];
+                        for (let i = 1; i < rawData.length; i++) {
+                            const row = rawData[i];
+                            if (!row || !row[0]) continue;
+
+                            const itemName = row[0];
+                            const stock = parseFloat(row[1]) || 0;
+                            const outbound = parseFloat(row[2]) || 0;
+
+                            const dailyOutbound = outbound / period;
+                            let availableDays = null;
+
+                            if (dailyOutbound > 0) {
+                                availableDays = Math.floor(stock / dailyOutbound);
+                            }
+
+                            parsedItems.push({ itemName, stock, outbound, availableDays });
+                        }
+
+                        const nextVersion = `V${histories.length + 1}`;
+                        const now = new Date().toISOString();
+                        const newDocData = { version: nextVersion, createdAt: now, period: period, items: parsedItems };
+
+                        if (firebaseRefs) {
+                            const { db, appId, collection, addDoc } = firebaseRefs;
+                            const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'inventory_history');
+                            const newDoc = await addDoc(collRef, newDocData);
+                            setSelectedHistoryId(newDoc.id);
+                        }
+
+                    } catch (error) {
+                        console.error("Excel parse error:", error);
+                        alert("엑셀 파일을 분석하는 중 오류가 발생했습니다.");
+                    } finally {
+                        setIsUploading(false);
+                        e.target.value = null;
+                    }
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            const formatDate = (isoString) => {
+                const d = new Date(isoString);
+                return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            };
+
+            const getFileNameDate = (isoString) => {
+                const d = new Date(isoString);
+                return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+            };
+
+            const currentData = useMemo(() => {
+                return histories.find(h => h.id === selectedHistoryId) || null;
+            }, [histories, selectedHistoryId]);
+
+            // 필터링 적용된 데이터
+            const filteredItems = useMemo(() => {
+                if (!currentData) return [];
+                if (showWarningOnly) {
+                    return currentData.items.filter(item => item.availableDays !== null && item.availableDays < 30);
+                }
+                return currentData.items;
+            }, [currentData, showWarningOnly]);
+
+            // 엑셀 다운로드 로직 추가
+            const exportToExcel = () => {
+                if (!filteredItems || filteredItems.length === 0) {
+                    alert("다운로드할 데이터가 없습니다.");
+                    return;
+                }
+
+                // 현재 화면에 보이는 데이터 규격에 맞춰 엑셀용 배열 생성
+                const exportData = filteredItems.map(item => ({
+                    "상품명": item.itemName,
+                    "가용재고": item.stock,
+                    "출고수량": item.outbound,
+                    "일평균": item.outbound > 0 ? (item.outbound / currentData.period).toFixed(1) : "-",
+                    "예상 소진일(일)": item.availableDays === null ? "출고 없음" : item.availableDays
+                }));
+
+                const worksheet = XLSX.utils.json_to_sheet(exportData);
+                const workbook = XLSX.utils.book_new();
+                
+                // 열 너비 자동 조절 설정
+                const wscols = [
+                    {wch: 40}, // 상품명 너비
+                    {wch: 15}, // 가용재고 너비
+                    {wch: 15}, // 출고수량 너비
+                    {wch: 15}, // 일평균 너비
+                    {wch: 20}  // 예상 소진일 너비
+                ];
+                worksheet['!cols'] = wscols;
+
+                XLSX.utils.book_append_sheet(workbook, worksheet, "재고소진예상일");
+                
+                // 파일명 생성 및 다운로드 실행
+                const fileName = `재고소진분석_${getFileNameDate(currentData.createdAt)}.xlsx`;
+                XLSX.writeFile(workbook, fileName);
+            };
+
+            // --- UI RENDER ---
+
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-10 border border-slate-200">
+                            <div className="text-center mb-8">
+                                <div className="bg-indigo-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                    <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                                </div>
+                                <h2 className="text-2xl font-bold text-slate-800">보안 접근</h2>
+                                <p className="text-sm text-slate-500 mt-2">관리자 권한이 필요합니다.</p>
+                            </div>
+                            <form onSubmit={handleLogin}>
+                                <input 
+                                    type="password" 
+                                    value={pin}
+                                    onChange={(e) => setPin(e.target.value)}
+                                    placeholder="비밀번호 입력"
+                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center text-lg tracking-widest font-semibold text-slate-700 mb-4"
+                                    autoFocus
+                                />
+                                {errorMsg && <p className="text-red-500 text-sm text-center mb-4">{errorMsg}</p>}
+                                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors shadow-md">
+                                    접속하기
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <header className="glass-effect sticky top-0 z-50 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                            <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                                📊 재고 소진 예상일 관리 시스템
+                            </h1>
+                        </div>
+                    </header>
+
+                    <main className="flex-grow p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
+                        
+                        {/* 상태 패널 및 액션 버튼(토글, 다운로드) */}
+                        {currentData && (
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 border-l-4 border-l-indigo-500">
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">
+                                        최신 데이터 기준 (<span className="text-indigo-600">{currentData.period}일</span> 출고량 반영)
+                                    </h2>
+                                    <p className="text-sm text-slate-500 mt-1">
+                                        마지막 업데이트: {formatDate(currentData.createdAt)}
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <button 
+                                        onClick={() => setShowWarningOnly(!showWarningOnly)}
+                                        className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                                    >
+                                        {showWarningOnly ? '전체 목록 보기' : '🚨 30일 미만 위급 품목만 보기'}
+                                    </button>
+                                    
+                                    {/* 신규: 엑셀 다운로드 버튼 */}
+                                    <button 
+                                        onClick={exportToExcel}
+                                        className="px-4 py-2.5 rounded-lg text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                        엑셀 다운로드
+                                    </button>
+
+                                    <div className="bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hidden sm:block">
+                                        총 <span className="text-indigo-600">{filteredItems.length}</span>개 품목
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Data Table */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                            <div className="overflow-y-auto custom-scrollbar" style={{ maxHeight: '60vh' }}>
+                                <table className="w-full text-sm text-left text-slate-600 table-fixed">
+                                    <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
+                                        <tr>
+                                            <th scope="col" className="w-[36%] px-4 py-4 font-bold border-b border-slate-200">상품명</th>
+                                            <th scope="col" className="w-[16%] px-4 py-4 font-bold text-right border-b border-slate-200">가용재고</th>
+                                            <th scope="col" className="w-[16%] px-4 py-4 font-bold text-right border-b border-slate-200">출고수량</th>
+                                            <th scope="col" className="w-[16%] px-4 py-4 font-bold text-right border-b border-slate-200">일평균</th>
+                                            <th scope="col" className="w-[16%] px-4 py-4 font-extrabold text-right text-indigo-700 bg-indigo-50/80 border-b border-indigo-100">예상 소진일</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {currentData ? (
+                                            filteredItems.length > 0 ? (
+                                                filteredItems.map((item, idx) => {
+                                                    const daily = item.outbound / currentData.period;
+                                                    const isWarning = item.availableDays !== null && item.availableDays < 30;
+                                                    
+                                                    return (
+                                                        <tr key={idx} className={`border-b transition-colors ${isWarning ? 'bg-red-50 hover:bg-red-100 border-red-100' : 'bg-white hover:bg-slate-50 border-slate-100'}`}>
+                                                            <td className={`px-4 py-3 font-semibold truncate ${isWarning ? 'text-red-900' : 'text-slate-800'}`} title={item.itemName}>
+                                                                {item.itemName}
+                                                            </td>
+                                                            <td className={`px-4 py-3 text-right font-medium ${isWarning ? 'text-red-800' : ''}`}>
+                                                                {item.stock.toLocaleString()}
+                                                            </td>
+                                                            <td className={`px-4 py-3 text-right ${isWarning ? 'text-red-800' : ''}`}>
+                                                                {item.outbound.toLocaleString()}
+                                                            </td>
+                                                            <td className={`px-4 py-3 text-right font-mono text-xs ${isWarning ? 'text-red-700' : 'text-slate-500'}`}>
+                                                                {daily > 0 ? daily.toFixed(1) : '-'}
+                                                            </td>
+                                                            <td className={`px-4 py-3 text-right font-bold ${isWarning ? 'text-red-600' : 'text-indigo-600'}`}>
+                                                                {item.availableDays === null ? (
+                                                                    <span className="text-slate-400 font-normal text-xs">출고 없음</span>
+                                                                ) : (
+                                                                    <span>{item.availableDays.toLocaleString()} 일</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan="5" className="px-6 py-16 text-center text-slate-500 font-medium">
+                                                        조건에 일치하는 품목이 없습니다.
+                                                    </td>
+                                                </tr>
+                                            )
+                                        ) : (
+                                            <tr>
+                                                <td colSpan="5" className="px-6 py-16 text-center text-slate-500 font-medium">
+                                                    등록된 데이터가 없습니다. 아래에서 엑셀 파일을 업로드해주세요.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Upload Section */}
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mt-6">
+                            <div className="mb-4 flex items-center justify-between">
+                                <h4 className="font-extrabold text-slate-800 text-base flex items-center gap-2">📂 엑셀 파일 업데이트</h4>
+                                <span className="text-xs text-slate-400">데이터는 자동으로 클라우드에 안전하게 저장됩니다.</span>
+                            </div>
+                            <div className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors relative ${isUploading ? 'border-slate-300 bg-slate-50' : 'border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 cursor-pointer'}`}>
+                                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} disabled={isUploading} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10 disabled:cursor-not-allowed"/>
+                                {isUploading ? (
+                                    <div className="flex flex-col items-center justify-center">
+                                        <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
+                                        <h5 className="text-sm font-bold text-slate-600">데이터 처리 중...</h5>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="bg-white w-12 h-12 rounded-full shadow-sm flex items-center justify-center mx-auto mb-3 text-2xl">📥</div>
+                                        <h5 className="text-sm font-extrabold text-indigo-900">클릭하거나 파일을 드롭하세요</h5>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
