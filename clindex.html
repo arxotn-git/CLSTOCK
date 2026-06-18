@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>재고 소진 예상일 관리 (v03)</title>
+    <title>재고 소진 예상일 관리 (v04)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -56,12 +56,14 @@
             const [selectedHistoryId, setSelectedHistoryId] = useState(null);
             const [isUploading, setIsUploading] = useState(false);
             
-            // 신규: 서버 상태 및 팝업 상태 관리
-            const [serverStatus, setServerStatus] = useState("connecting"); // connecting, connected, disconnected
+            const [serverStatus, setServerStatus] = useState("connecting"); 
             const [toastMessage, setToastMessage] = useState("");
+            
             const [showWarningOnly, setShowWarningOnly] = useState(false);
+            // 신규: 분석 기준 기간 (30일, 15일, 7일)
+            const [selectedPeriod, setSelectedPeriod] = useState(30);
 
-            // 네트워크 온라인/오프라인 감지
+            // 네트워크 감지
             useEffect(() => {
                 const handleOnline = () => setServerStatus("connected");
                 const handleOffline = () => setServerStatus("disconnected");
@@ -73,7 +75,7 @@
                 }
             }, []);
 
-            // 팝업 자동 닫기 (3.5초)
+            // 팝업 타이머
             useEffect(() => {
                 if (toastMessage) {
                     const timer = setTimeout(() => setToastMessage(""), 3500);
@@ -164,6 +166,19 @@
                 }
             };
 
+            // 엑셀 날짜 안전 파싱
+            const parseExcelDate = (dateVal) => {
+                if (!dateVal) return null;
+                if (typeof dateVal === 'number') {
+                    // 엑셀 시리얼 넘버 처리
+                    return new Date((dateVal - 25569) * 86400 * 1000);
+                }
+                const d = new Date(dateVal);
+                if (!isNaN(d.getTime())) return d;
+                return null;
+            };
+
+            // 멀티 시트 엑셀 업로드 로직 (v04 핵심)
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -175,42 +190,90 @@
                     try {
                         const bstr = evt.target.result;
                         const wb = XLSX.read(bstr, { type: 'binary' });
-                        const wsname = wb.SheetNames[0];
-                        const ws = wb.Sheets[wsname];
-                        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-                        if (rawData.length < 2) {
-                            alert("데이터가 충분하지 않습니다.");
+                        
+                        // 시트 1: 현재고, 시트 2: 출고수량
+                        if (wb.SheetNames.length < 2) {
+                            alert("엑셀 파일에 시트가 2개 이상 필요합니다. (1번 시트: 현재고, 2번 시트: 출고수량)");
                             setIsUploading(false);
                             return;
                         }
+                        
+                        const ws1 = wb.Sheets[wb.SheetNames[0]]; // 현재고
+                        const ws2 = wb.Sheets[wb.SheetNames[1]]; // 출고수량
+                        
+                        const raw1 = XLSX.utils.sheet_to_json(ws1, { header: 1 });
+                        const raw2 = XLSX.utils.sheet_to_json(ws2, { header: 1 });
 
-                        const headerRow = rawData[0];
-                        let period = parseInt(String(headerRow[2]).replace(/[^0-9]/g, ''));
-                        if (isNaN(period) || period <= 0) period = 30; 
-
-                        const parsedItems = [];
-                        for (let i = 1; i < rawData.length; i++) {
-                            const row = rawData[i];
-                            if (!row || !row[0]) continue;
-
-                            const itemName = row[0];
-                            const stock = parseFloat(row[1]) || 0;
-                            const outbound = parseFloat(row[2]) || 0;
-
-                            const dailyOutbound = outbound / period;
-                            let availableDays = null;
-
-                            if (dailyOutbound > 0) {
-                                availableDays = Math.floor(stock / dailyOutbound);
+                        // 1. 최신 출고 날짜 찾기 (출고수량 G열)
+                        let maxDate = 0;
+                        raw2.forEach((row, idx) => {
+                            if (idx === 0 || !row) return; // 헤더 제외
+                            const d = parseExcelDate(row[6]); // G열 출고일시
+                            if (d && d.getTime() > maxDate) {
+                                maxDate = d.getTime();
                             }
+                        });
 
-                            parsedItems.push({ itemName, stock, outbound, availableDays });
-                        }
+                        // 최신 날짜를 '어제' 기준으로 삼아 역산 시작 지점 확보
+                        const baseDate = maxDate > 0 ? new Date(maxDate) : new Date();
+                        baseDate.setHours(23, 59, 59, 999);
+                        const baseTime = baseDate.getTime();
+                        
+                        // 역산 일자 세팅
+                        const time30 = baseTime - 30 * 86400000;
+                        const time15 = baseTime - 15 * 86400000;
+                        const time7 = baseTime - 7 * 86400000;
+
+                        // 2. 출고 수량 누적 맵핑 (H열 자사상품명, I열 출고량)
+                        const outboundMap = {};
+                        raw2.forEach((row, idx) => {
+                            if (idx === 0 || !row) return;
+                            const dateVal = row[6];
+                            const itemName = row[7];
+                            const amt = parseFloat(row[8]) || 0;
+                            
+                            if (!itemName) return;
+                            const d = parseExcelDate(dateVal);
+                            if (!d) return;
+                            
+                            const dTime = d.getTime();
+                            if (!outboundMap[itemName]) {
+                                outboundMap[itemName] = { out_30: 0, out_15: 0, out_7: 0 };
+                            }
+                            
+                            if (dTime > time30 && dTime <= baseTime) outboundMap[itemName].out_30 += amt;
+                            if (dTime > time15 && dTime <= baseTime) outboundMap[itemName].out_15 += amt;
+                            if (dTime > time7 && dTime <= baseTime) outboundMap[itemName].out_7 += amt;
+                        });
+
+                        // 3. 현재고 매핑 (E열 상품명, F열 가용재고)
+                        const parsedItems = [];
+                        raw1.forEach((row, idx) => {
+                            if (idx === 0 || !row) return; 
+                            const itemName = row[4]; // E열
+                            const stock = parseFloat(row[5]) || 0; // F열
+                            
+                            // 헤더 등 잘못된 문자열 걸러내기
+                            if (!itemName || itemName === '상품명' || itemName === '자사 상품명') return;
+                            
+                            const outData = outboundMap[itemName] || { out_30: 0, out_15: 0, out_7: 0 };
+                            
+                            parsedItems.push({
+                                itemName,
+                                stock,
+                                out_30: outData.out_30,
+                                out_15: outData.out_15,
+                                out_7: outData.out_7
+                            });
+                        });
 
                         const nextVersion = `V${histories.length + 1}`;
                         const now = new Date().toISOString();
-                        const newDocData = { version: nextVersion, createdAt: now, period: period, items: parsedItems };
+                        const newDocData = { 
+                            version: nextVersion, 
+                            createdAt: now, 
+                            items: parsedItems 
+                        };
 
                         if (firebaseRefs) {
                             const { db, appId, collection, addDoc } = firebaseRefs;
@@ -218,13 +281,12 @@
                             const newDoc = await addDoc(collRef, newDocData);
                             setSelectedHistoryId(newDoc.id);
                             
-                            // 성공 팝업 띄우기
-                            setToastMessage("최신 엑셀 데이터가 클라우드에 안전하게 연동되었습니다.");
+                            setToastMessage("최신 멀티시트 엑셀이 안전하게 통합 연동되었습니다.");
                         }
 
                     } catch (error) {
                         console.error("Excel parse error:", error);
-                        alert("엑셀 파일을 분석하는 중 오류가 발생했습니다.");
+                        alert("엑셀 데이터를 분석하는 중 오류가 발생했습니다. (E/F/G/H/I열 구조 확인 필요)");
                     } finally {
                         setIsUploading(false);
                         e.target.value = null;
@@ -247,27 +309,57 @@
                 return histories.find(h => h.id === selectedHistoryId) || null;
             }, [histories, selectedHistoryId]);
 
-            const filteredItems = useMemo(() => {
+            // 선택된 기준에 맞춰 실시간 파생 데이터 생성
+            const processedItems = useMemo(() => {
                 if (!currentData) return [];
-                if (showWarningOnly) {
-                    // 30일 이내 품절 예상 필터: 재고가 0인 품목은 리스트에서 자동 제외
-                    return currentData.items.filter(item => item.availableDays !== null && item.availableDays < 30 && item.stock > 0);
-                }
-                return currentData.items; // 전체 리스팅 시에는 재고 0개 포함
-            }, [currentData, showWarningOnly]);
+                
+                return currentData.items.map(item => {
+                    // 과거 레거시(v03) 데이터 호환성 보장
+                    const isLegacy = item.out_30 === undefined;
+                    let outbound, periodToUse;
+                    
+                    if (isLegacy) {
+                        outbound = item.outbound || 0;
+                        periodToUse = currentData.period || 30; // 레거시는 30일 고정
+                    } else {
+                        outbound = item[`out_${selectedPeriod}`] || 0;
+                        periodToUse = selectedPeriod;
+                    }
+                    
+                    const daily = outbound / periodToUse;
+                    let availableDays = null;
+                    if (daily > 0) {
+                        availableDays = Math.floor(item.stock / daily);
+                    }
+                    
+                    return {
+                        ...item,
+                        _outboundToDisplay: outbound,
+                        _dailyToDisplay: daily,
+                        _availableDays: availableDays,
+                        _periodToUse: periodToUse
+                    };
+                }).filter(item => {
+                    if (showWarningOnly) {
+                        // 30일 이내 품절 예상: 재고 0개 제외
+                        return item._availableDays !== null && item._availableDays < 30 && item.stock > 0;
+                    }
+                    return true;
+                });
+            }, [currentData, showWarningOnly, selectedPeriod]);
 
             const exportToExcel = () => {
-                if (!filteredItems || filteredItems.length === 0) {
+                if (!processedItems || processedItems.length === 0) {
                     alert("다운로드할 데이터가 없습니다.");
                     return;
                 }
 
-                const exportData = filteredItems.map(item => ({
+                const exportData = processedItems.map(item => ({
                     "상품명": item.itemName,
                     "총재고": item.stock,
-                    "출고수량": item.outbound,
-                    "일평균": item.outbound > 0 ? (item.outbound / currentData.period).toFixed(1) : "-",
-                    "예상 소진일(일)": item.availableDays === null ? "출고 없음" : item.availableDays
+                    "출고수량": item._outboundToDisplay,
+                    "일평균": item._outboundToDisplay > 0 ? item._dailyToDisplay.toFixed(1) : "-",
+                    "예상 소진일(일)": item._availableDays === null ? "출고 없음" : item._availableDays
                 }));
 
                 const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -319,7 +411,6 @@
             return (
                 <div className="min-h-screen flex flex-col bg-slate-50 relative">
                     
-                    {/* 성공 알림 팝업 (빈 여백 클릭 시 사라지도록 투명 오버레이 적용) */}
                     {toastMessage && (
                         <div 
                             className="fixed inset-0 z-50 flex justify-center items-start pt-6"
@@ -327,7 +418,7 @@
                         >
                             <div 
                                 className="bg-white border border-slate-200 shadow-xl rounded-2xl p-4 flex items-center gap-4 animate-slide-down max-w-sm w-full mx-4 cursor-default"
-                                onClick={(e) => e.stopPropagation()} // 팝업 자체 클릭 시에는 안 닫힘
+                                onClick={(e) => e.stopPropagation()}
                             >
                                 <div className="bg-green-100 text-green-600 rounded-full p-2.5 flex-shrink-0">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
@@ -336,10 +427,7 @@
                                     <h4 className="text-sm font-bold text-slate-800">업데이트 성공</h4>
                                     <p className="text-xs text-slate-500 mt-0.5">{toastMessage}</p>
                                 </div>
-                                <button 
-                                    onClick={() => setToastMessage("")} 
-                                    className="text-slate-400 hover:text-slate-600 p-1 flex-shrink-0"
-                                >
+                                <button onClick={() => setToastMessage("")} className="text-slate-400 hover:text-slate-600 p-1 flex-shrink-0">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                 </button>
                             </div>
@@ -349,10 +437,9 @@
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                                📊 재고 소진 예상일 관리 <span className="text-slate-400 font-semibold text-sm">(v03)</span>
+                                📊 재고 소진 예상일 관리 <span className="text-slate-400 font-semibold text-sm">(v04)</span>
                             </h1>
                             
-                            {/* 실시간 서버 연동 상태 표시기 */}
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full">
                                 {serverStatus === 'connected' ? (
                                     <>
@@ -382,7 +469,6 @@
                                     onChange={(e) => setSelectedHistoryId(e.target.value)}
                                 >
                                     {histories.map(h => (
-                                        // 버전 정보를 빼고 날짜만 표시되도록 수정
                                         <option key={h.id} value={h.id}>
                                             {formatDate(h.createdAt)}
                                         </option>
@@ -395,16 +481,30 @@
                     <main className="flex-grow p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
                         
                         {currentData && (
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 border-l-4 border-l-indigo-500">
-                                <div>
-                                    <h2 className="text-lg font-bold text-slate-800">
-                                        최신 데이터 기준 (<span className="text-indigo-600">{currentData.period}일</span> 출고량 반영)
-                                    </h2>
-                                    <p className="text-sm text-slate-500 mt-1">
-                                        마지막 업데이트: {formatDate(currentData.createdAt)}
-                                    </p>
+                            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 border-l-4 border-l-indigo-500">
+                                
+                                <div className="flex flex-col gap-3">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-800">
+                                            통합 분석 리포트
+                                        </h2>
+                                        <p className="text-sm text-slate-500 mt-0.5">
+                                            마지막 업데이트: {formatDate(currentData.createdAt)}
+                                        </p>
+                                    </div>
+
+                                    {/* 신규: 30일/15일/7일 분석 기간 스위치 */}
+                                    <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                                        <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
+                                        <div className="flex gap-1">
+                                            <button onClick={() => setSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 30 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
+                                            <button onClick={() => setSelectedPeriod(15)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 15 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>15일</button>
+                                            <button onClick={() => setSelectedPeriod(7)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 7 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>7일</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-3">
+
+                                <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto mt-2 xl:mt-0">
                                     <button 
                                         onClick={() => setShowWarningOnly(!showWarningOnly)}
                                         className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
@@ -420,8 +520,8 @@
                                         엑셀 다운로드
                                     </button>
 
-                                    <div className="bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hidden sm:block">
-                                        총 <span className="text-indigo-600">{filteredItems.length}</span>개 품목
+                                    <div className="bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700 ml-auto xl:ml-0">
+                                        총 <span className="text-indigo-600">{processedItems.length}</span>개 품목
                                     </div>
                                 </div>
                             </div>
@@ -431,39 +531,41 @@
                             <table className="w-full min-w-[700px] text-sm text-left text-slate-600 table-fixed">
                                 <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                     <tr>
-                                        <th scope="col" className="w-[30%] px-4 py-4 font-bold border-b border-slate-200">상품명</th>
-                                        <th scope="col" className="w-[15%] px-4 py-4 font-bold text-right border-b border-slate-200">총재고</th>
-                                        <th scope="col" className="w-[25%] px-4 py-4 font-bold text-right border-b border-slate-200">출고수량({currentData ? currentData.period : '00'}일 기준)</th>
-                                        <th scope="col" className="w-[15%] px-4 py-4 font-bold text-right border-b border-slate-200">일평균</th>
-                                        <th scope="col" className="w-[15%] px-4 py-4 font-extrabold text-right text-indigo-700 bg-indigo-50/80 border-b border-indigo-100">예상 소진일</th>
+                                        {/* 간격 및 시인성 최적화: 상품명 너비를 키우고, 총재고를 좌측 정렬하여 가깝게 배치 */}
+                                        <th scope="col" className="w-[45%] px-4 py-4 font-bold border-b border-slate-200 text-left">상품명</th>
+                                        <th scope="col" className="w-[12%] px-4 py-4 font-bold border-b border-slate-200 text-left">총재고</th>
+                                        <th scope="col" className="w-[17%] px-4 py-4 font-bold border-b border-slate-200 text-right">출고수량({selectedPeriod}일)</th>
+                                        <th scope="col" className="w-[11%] px-4 py-4 font-bold border-b border-slate-200 text-right">일평균</th>
+                                        <th scope="col" className="w-[15%] px-4 py-4 font-extrabold text-indigo-700 bg-indigo-50/80 border-b border-indigo-100 text-right">예상 소진일</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {currentData ? (
-                                        filteredItems.length > 0 ? (
-                                            filteredItems.map((item, idx) => {
-                                                const daily = item.outbound / currentData.period;
-                                                const isWarning = item.availableDays !== null && item.availableDays < 30;
+                                        processedItems.length > 0 ? (
+                                            processedItems.map((item, idx) => {
+                                                // 일평균 및 예상소진일 사용
+                                                const isWarning = item._availableDays !== null && item._availableDays < 30;
                                                 
                                                 return (
                                                     <tr key={idx} className={`border-b transition-colors ${isWarning ? 'bg-red-50 hover:bg-red-100 border-red-100' : 'bg-white hover:bg-slate-50 border-slate-100'}`}>
                                                         <td className={`px-4 py-3 font-semibold truncate ${isWarning ? 'text-red-900' : 'text-slate-800'}`} title={item.itemName}>
                                                             {item.itemName}
                                                         </td>
-                                                        <td className={`px-4 py-3 text-right font-medium ${isWarning ? 'text-red-800' : ''}`}>
+                                                        <td className={`px-4 py-3 font-medium text-left ${isWarning ? 'text-red-800' : ''}`}>
                                                             {item.stock.toLocaleString()}
                                                         </td>
                                                         <td className={`px-4 py-3 text-right ${isWarning ? 'text-red-800' : ''}`}>
-                                                            {item.outbound.toLocaleString()}
+                                                            {item._outboundToDisplay.toLocaleString()}
                                                         </td>
-                                                        <td className={`px-4 py-3 text-right font-mono text-xs ${isWarning ? 'text-red-700' : 'text-slate-500'}`}>
-                                                            {daily > 0 ? daily.toFixed(1) : '-'}
+                                                        {/* 일평균 폰트 사이즈 통일 및 우측 정렬 유지 */}
+                                                        <td className={`px-4 py-3 text-right font-medium ${isWarning ? 'text-red-700' : 'text-slate-600'}`}>
+                                                            {item._outboundToDisplay > 0 ? item._dailyToDisplay.toFixed(1) : '-'}
                                                         </td>
                                                         <td className={`px-4 py-3 text-right font-bold ${isWarning ? 'text-red-600' : 'text-indigo-600'}`}>
-                                                            {item.availableDays === null ? (
+                                                            {item._availableDays === null ? (
                                                                 <span className="text-slate-400 font-normal text-xs">출고 없음</span>
                                                             ) : (
-                                                                <span>{item.availableDays.toLocaleString()} 일</span>
+                                                                <span>{item._availableDays.toLocaleString()} 일</span>
                                                             )}
                                                         </td>
                                                     </tr>
@@ -489,7 +591,7 @@
 
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mt-6">
                             <div className="mb-4 flex items-center justify-between">
-                                <h4 className="font-extrabold text-slate-800 text-base flex items-center gap-2">📂 엑셀 파일 업데이트</h4>
+                                <h4 className="font-extrabold text-slate-800 text-base flex items-center gap-2">📂 엑셀 파일 통합 업데이트</h4>
                                 <span className="text-xs text-slate-400">데이터는 자동으로 클라우드에 안전하게 저장됩니다.</span>
                             </div>
                             <div className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors relative ${isUploading ? 'border-slate-300 bg-slate-50' : 'border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 cursor-pointer'}`}>
@@ -497,12 +599,13 @@
                                 {isUploading ? (
                                     <div className="flex flex-col items-center justify-center">
                                         <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
-                                        <h5 className="text-sm font-bold text-slate-600">데이터 처리 중...</h5>
+                                        <h5 className="text-sm font-bold text-slate-600">데이터를 통합 분석 중입니다...</h5>
                                     </div>
                                 ) : (
                                     <>
                                         <div className="bg-white w-12 h-12 rounded-full shadow-sm flex items-center justify-center mx-auto mb-3 text-2xl">📥</div>
                                         <h5 className="text-sm font-extrabold text-indigo-900">클릭하거나 파일을 드롭하세요</h5>
+                                        <p className="text-xs text-slate-400 mt-1">1번 시트: 현재고 / 2번 시트: 출고수량</p>
                                     </>
                                 )}
                             </div>
