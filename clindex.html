@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>재고 소진 예상일 관리 (v01)</title>
+    <title>재고 소진 예상일 관리 (v03)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -250,9 +250,10 @@
             const filteredItems = useMemo(() => {
                 if (!currentData) return [];
                 if (showWarningOnly) {
-                    return currentData.items.filter(item => item.availableDays !== null && item.availableDays < 30);
+                    // 30일 이내 품절 예상 필터: 재고가 0인 품목은 리스트에서 자동 제외
+                    return currentData.items.filter(item => item.availableDays !== null && item.availableDays < 30 && item.stock > 0);
                 }
-                return currentData.items;
+                return currentData.items; // 전체 리스팅 시에는 재고 0개 포함
             }, [currentData, showWarningOnly]);
 
             const exportToExcel = () => {
@@ -348,7 +349,7 @@
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                                📊 재고 소진 예상일 관리 <span className="text-slate-400 font-semibold text-sm">(v01)</span>
+                                📊 재고 소진 예상일 관리 <span className="text-slate-400 font-semibold text-sm">(v03)</span>
                             </h1>
                             
                             {/* 실시간 서버 연동 상태 표시기 */}
@@ -408,7 +409,7 @@
                                         onClick={() => setShowWarningOnly(!showWarningOnly)}
                                         className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
                                     >
-                                        {showWarningOnly ? '전체 목록 보기' : '🚨 30일 미만 위급 품목만 보기'}
+                                        {showWarningOnly ? '전체 목록 보기' : '🚨 30일 이내 품절 예상'}
                                     </button>
                                     
                                     <button 
