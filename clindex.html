@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>재고 소진 예상일 관리 (v04)</title>
+    <title>재고 소진 예상일 관리 (v06)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     
     <!-- React & Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -21,7 +21,6 @@
         body { font-family: 'Inter', 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
         .glass-effect { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
         
-        /* 팝업 등장 애니메이션 */
         @keyframes slideDown {
             from { transform: translateY(-100%); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
@@ -60,10 +59,8 @@
             const [toastMessage, setToastMessage] = useState("");
             
             const [showWarningOnly, setShowWarningOnly] = useState(false);
-            // 신규: 분석 기준 기간 (30일, 15일, 7일)
             const [selectedPeriod, setSelectedPeriod] = useState(30);
 
-            // 네트워크 감지
             useEffect(() => {
                 const handleOnline = () => setServerStatus("connected");
                 const handleOffline = () => setServerStatus("disconnected");
@@ -75,7 +72,6 @@
                 }
             }, []);
 
-            // 팝업 타이머
             useEffect(() => {
                 if (toastMessage) {
                     const timer = setTimeout(() => setToastMessage(""), 3500);
@@ -83,7 +79,6 @@
                 }
             }, [toastMessage]);
 
-            // 파이어베이스 초기화
             useEffect(() => {
                 let isMounted = true;
                 const initFirebase = async () => {
@@ -128,7 +123,6 @@
                 return () => { isMounted = false; };
             }, []);
 
-            // 데이터 불러오기
             useEffect(() => {
                 if (!firebaseUser || !firebaseRefs) return;
 
@@ -166,11 +160,9 @@
                 }
             };
 
-            // 엑셀 날짜 안전 파싱
             const parseExcelDate = (dateVal) => {
                 if (!dateVal) return null;
                 if (typeof dateVal === 'number') {
-                    // 엑셀 시리얼 넘버 처리
                     return new Date((dateVal - 25569) * 86400 * 1000);
                 }
                 const d = new Date(dateVal);
@@ -178,7 +170,6 @@
                 return null;
             };
 
-            // 멀티 시트 엑셀 업로드 로직 (v04 핵심)
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -191,40 +182,35 @@
                         const bstr = evt.target.result;
                         const wb = XLSX.read(bstr, { type: 'binary' });
                         
-                        // 시트 1: 현재고, 시트 2: 출고수량
                         if (wb.SheetNames.length < 2) {
                             alert("엑셀 파일에 시트가 2개 이상 필요합니다. (1번 시트: 현재고, 2번 시트: 출고수량)");
                             setIsUploading(false);
                             return;
                         }
                         
-                        const ws1 = wb.Sheets[wb.SheetNames[0]]; // 현재고
-                        const ws2 = wb.Sheets[wb.SheetNames[1]]; // 출고수량
+                        const ws1 = wb.Sheets[wb.SheetNames[0]]; 
+                        const ws2 = wb.Sheets[wb.SheetNames[1]]; 
                         
                         const raw1 = XLSX.utils.sheet_to_json(ws1, { header: 1 });
                         const raw2 = XLSX.utils.sheet_to_json(ws2, { header: 1 });
 
-                        // 1. 최신 출고 날짜 찾기 (출고수량 G열)
                         let maxDate = 0;
                         raw2.forEach((row, idx) => {
-                            if (idx === 0 || !row) return; // 헤더 제외
-                            const d = parseExcelDate(row[6]); // G열 출고일시
+                            if (idx === 0 || !row) return; 
+                            const d = parseExcelDate(row[6]); 
                             if (d && d.getTime() > maxDate) {
                                 maxDate = d.getTime();
                             }
                         });
 
-                        // 최신 날짜를 '어제' 기준으로 삼아 역산 시작 지점 확보
                         const baseDate = maxDate > 0 ? new Date(maxDate) : new Date();
                         baseDate.setHours(23, 59, 59, 999);
                         const baseTime = baseDate.getTime();
                         
-                        // 역산 일자 세팅
                         const time30 = baseTime - 30 * 86400000;
                         const time15 = baseTime - 15 * 86400000;
                         const time7 = baseTime - 7 * 86400000;
 
-                        // 2. 출고 수량 누적 맵핑 (H열 자사상품명, I열 출고량)
                         const outboundMap = {};
                         raw2.forEach((row, idx) => {
                             if (idx === 0 || !row) return;
@@ -246,14 +232,12 @@
                             if (dTime > time7 && dTime <= baseTime) outboundMap[itemName].out_7 += amt;
                         });
 
-                        // 3. 현재고 매핑 (E열 상품명, F열 가용재고)
                         const parsedItems = [];
                         raw1.forEach((row, idx) => {
                             if (idx === 0 || !row) return; 
-                            const itemName = row[4]; // E열
-                            const stock = parseFloat(row[5]) || 0; // F열
+                            const itemName = row[4]; 
+                            const stock = parseFloat(row[5]) || 0; 
                             
-                            // 헤더 등 잘못된 문자열 걸러내기
                             if (!itemName || itemName === '상품명' || itemName === '자사 상품명') return;
                             
                             const outData = outboundMap[itemName] || { out_30: 0, out_15: 0, out_7: 0 };
@@ -309,18 +293,16 @@
                 return histories.find(h => h.id === selectedHistoryId) || null;
             }, [histories, selectedHistoryId]);
 
-            // 선택된 기준에 맞춰 실시간 파생 데이터 생성
             const processedItems = useMemo(() => {
                 if (!currentData) return [];
                 
                 return currentData.items.map(item => {
-                    // 과거 레거시(v03) 데이터 호환성 보장
                     const isLegacy = item.out_30 === undefined;
                     let outbound, periodToUse;
                     
                     if (isLegacy) {
                         outbound = item.outbound || 0;
-                        periodToUse = currentData.period || 30; // 레거시는 30일 고정
+                        periodToUse = currentData.period || 30; 
                     } else {
                         outbound = item[`out_${selectedPeriod}`] || 0;
                         periodToUse = selectedPeriod;
@@ -331,17 +313,30 @@
                     if (daily > 0) {
                         availableDays = Math.floor(item.stock / daily);
                     }
+
+                    // v06: 하이픈 제외 없이 원본 이름 그대로 표시하되, 보더 구분을 위해 앞 번호만 추출
+                    let mainGroup = null;
+                    let displayName = item.itemName; // 엑셀 원본 이름 유지
+                    
+                    const match = item.itemName.match(/^(\d+)(?:-\d+)?[\.\s]+/);
+                    if (match) {
+                        mainGroup = match[1]; // 예: "02"
+                    }
                     
                     return {
                         ...item,
                         _outboundToDisplay: outbound,
                         _dailyToDisplay: daily,
                         _availableDays: availableDays,
-                        _periodToUse: periodToUse
+                        _periodToUse: periodToUse,
+                        _mainGroup: mainGroup,
+                        _displayName: displayName
                     };
                 }).filter(item => {
+                    // 번호가 없는 순수 텍스트(예: '상품')는 제외
+                    if (!item._mainGroup) return false;
+
                     if (showWarningOnly) {
-                        // 30일 이내 품절 예상: 재고 0개 제외
                         return item._availableDays !== null && item._availableDays < 30 && item.stock > 0;
                     }
                     return true;
@@ -355,7 +350,7 @@
                 }
 
                 const exportData = processedItems.map(item => ({
-                    "상품명": item.itemName,
+                    "상품명": item._displayName,
                     "총재고": item.stock,
                     "출고수량": item._outboundToDisplay,
                     "일평균": item._outboundToDisplay > 0 ? item._dailyToDisplay.toFixed(1) : "-",
@@ -437,7 +432,7 @@
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                                📊 재고 소진 예상일 관리 <span className="text-slate-400 font-semibold text-sm">(v04)</span>
+                                📊 재고 소진 예상일 관리 <span className="text-slate-400 font-semibold text-sm">(v06)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full">
@@ -493,7 +488,6 @@
                                         </p>
                                     </div>
 
-                                    {/* 신규: 30일/15일/7일 분석 기간 스위치 */}
                                     <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                                         <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
                                         <div className="flex gap-1">
@@ -527,43 +521,45 @@
                             </div>
                         )}
 
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
-                            <table className="w-full min-w-[700px] text-sm text-left text-slate-600 table-fixed">
-                                <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <table className="w-full min-w-[750px] text-sm text-left text-slate-600 table-fixed">
+                                <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                     <tr>
-                                        {/* 간격 및 시인성 최적화: 상품명 너비를 키우고, 총재고를 좌측 정렬하여 가깝게 배치 */}
-                                        <th scope="col" className="w-[45%] px-4 py-4 font-bold border-b border-slate-200 text-left">상품명</th>
-                                        <th scope="col" className="w-[12%] px-4 py-4 font-bold border-b border-slate-200 text-left">총재고</th>
-                                        <th scope="col" className="w-[17%] px-4 py-4 font-bold border-b border-slate-200 text-right">출고수량({selectedPeriod}일)</th>
-                                        <th scope="col" className="w-[11%] px-4 py-4 font-bold border-b border-slate-200 text-right">일평균</th>
-                                        <th scope="col" className="w-[15%] px-4 py-4 font-extrabold text-indigo-700 bg-indigo-50/80 border-b border-indigo-100 text-right">예상 소진일</th>
+                                        {/* v06: 모든 헤더 크기 및 굵기 완벽 균일화 (text-[15px] font-extrabold). 상품명-총재고 거리 극강화 (w-[35%] vs w-[13%]) */}
+                                        <th scope="col" className="w-[35%] px-4 py-5 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left">상품명</th>
+                                        <th scope="col" className="w-[13%] px-4 py-5 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-right">총재고</th>
+                                        <th scope="col" className="w-[18%] px-4 py-5 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-right">출고수량({selectedPeriod}일)</th>
+                                        <th scope="col" className="w-[14%] px-4 py-5 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-right">일평균</th>
+                                        <th scope="col" className="w-[20%] px-4 py-5 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-right">예상 소진일</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {currentData ? (
                                         processedItems.length > 0 ? (
                                             processedItems.map((item, idx) => {
-                                                // 일평균 및 예상소진일 사용
                                                 const isWarning = item._availableDays !== null && item._availableDays < 30;
                                                 
+                                                const isGroupChanged = idx > 0 && processedItems[idx - 1]._mainGroup !== item._mainGroup;
+                                                const borderClass = isGroupChanged ? 'border-t-2 border-t-slate-400' : 'border-t border-slate-100';
+                                                
                                                 return (
-                                                    <tr key={idx} className={`border-b transition-colors ${isWarning ? 'bg-red-50 hover:bg-red-100 border-red-100' : 'bg-white hover:bg-slate-50 border-slate-100'}`}>
-                                                        <td className={`px-4 py-3 font-semibold truncate ${isWarning ? 'text-red-900' : 'text-slate-800'}`} title={item.itemName}>
-                                                            {item.itemName}
+                                                    <tr key={idx} className={`transition-colors ${borderClass} ${isWarning ? 'bg-red-50 hover:bg-red-100' : 'bg-white hover:bg-slate-50'}`}>
+                                                        <td className={`px-4 py-4 font-bold truncate ${isWarning ? 'text-red-900' : 'text-slate-800'}`} title={item._displayName}>
+                                                            {item._displayName}
                                                         </td>
-                                                        <td className={`px-4 py-3 font-medium text-left ${isWarning ? 'text-red-800' : ''}`}>
+                                                        {/* v06: 모든 숫자 우측 정렬 유지, 폰트 두께 및 크기 증가 (font-black text-[15px]) */}
+                                                        <td className={`px-4 py-4 text-right font-black text-[15px] ${isWarning ? 'text-red-800' : 'text-slate-900'}`}>
                                                             {item.stock.toLocaleString()}
                                                         </td>
-                                                        <td className={`px-4 py-3 text-right ${isWarning ? 'text-red-800' : ''}`}>
+                                                        <td className={`px-4 py-4 text-right font-black text-[15px] ${isWarning ? 'text-red-800' : 'text-slate-700'}`}>
                                                             {item._outboundToDisplay.toLocaleString()}
                                                         </td>
-                                                        {/* 일평균 폰트 사이즈 통일 및 우측 정렬 유지 */}
-                                                        <td className={`px-4 py-3 text-right font-medium ${isWarning ? 'text-red-700' : 'text-slate-600'}`}>
+                                                        <td className={`px-4 py-4 text-right font-black text-[15px] ${isWarning ? 'text-red-700' : 'text-slate-600'}`}>
                                                             {item._outboundToDisplay > 0 ? item._dailyToDisplay.toFixed(1) : '-'}
                                                         </td>
-                                                        <td className={`px-4 py-3 text-right font-bold ${isWarning ? 'text-red-600' : 'text-indigo-600'}`}>
+                                                        <td className={`px-4 py-4 text-right font-black text-[15px] ${isWarning ? 'text-red-600' : 'text-indigo-600'}`}>
                                                             {item._availableDays === null ? (
-                                                                <span className="text-slate-400 font-normal text-xs">출고 없음</span>
+                                                                <span className="text-slate-400 font-bold text-[14px]">출고 없음</span>
                                                             ) : (
                                                                 <span>{item._availableDays.toLocaleString()} 일</span>
                                                             )}
@@ -573,14 +569,14 @@
                                             })
                                         ) : (
                                             <tr>
-                                                <td colSpan="5" className="px-6 py-16 text-center text-slate-500 font-medium">
+                                                <td colSpan="5" className="px-6 py-16 text-center text-slate-500 font-medium border-t border-slate-100">
                                                     조건에 일치하는 품목이 없습니다.
                                                 </td>
                                             </tr>
                                         )
                                     ) : (
                                         <tr>
-                                            <td colSpan="5" className="px-6 py-16 text-center text-slate-500 font-medium">
+                                            <td colSpan="5" className="px-6 py-16 text-center text-slate-500 font-medium border-t border-slate-100">
                                                 등록된 데이터가 없습니다. 아래에서 엑셀 파일을 업로드해주세요.
                                             </td>
                                         </tr>
