@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>재고 소진 예상일 관리 (v12)</title>
+    <title>CL 시스템 재고 관리 (v14)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -60,6 +60,9 @@
             
             const [showWarningOnly, setShowWarningOnly] = useState(false);
             const [selectedPeriod, setSelectedPeriod] = useState(30);
+            
+            // v13 신규: 검색어 상태 관리
+            const [searchTerm, setSearchTerm] = useState("");
 
             useEffect(() => {
                 const handleOnline = () => setServerStatus("connected");
@@ -374,11 +377,17 @@
                     if (!item._mainGroup) return false;
 
                     if (showWarningOnly) {
-                        return item._availableDays !== null && item._availableDays < 30 && item.stock > 0;
+                        if (!(item._availableDays !== null && item._availableDays < 30 && item.stock > 0)) return false;
                     }
+                    
+                    // v13 신규: 검색어가 입력되어 있으면 상품명에 포함된 경우만 노출
+                    if (searchTerm) {
+                        if (!item._displayName.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+                    }
+
                     return true;
                 });
-            }, [currentData, showWarningOnly, selectedPeriod]);
+            }, [currentData, showWarningOnly, selectedPeriod, searchTerm]);
 
             const exportToExcel = () => {
                 if (!processedItems || processedItems.length === 0) {
@@ -469,7 +478,7 @@
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                                📊 재고 소진 예상일 관리 <span className="text-slate-400 font-semibold text-sm">(v12)</span>
+                                📊 CL 시스템 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v14)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
@@ -524,17 +533,32 @@
                                         마지막 업데이트: {formatDate(currentData.createdAt)}
                                     </p>
 
-                                    <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-fit mt-1">
-                                        <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
-                                        <div className="flex gap-1">
-                                            <button onClick={() => setSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 30 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
-                                            <button onClick={() => setSelectedPeriod(15)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 15 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>15일</button>
-                                            <button onClick={() => setSelectedPeriod(7)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 7 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>7일</button>
+                                    <div className="flex flex-wrap items-center gap-3 mt-1">
+                                        <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-fit">
+                                            <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
+                                            <div className="flex gap-1">
+                                                <button onClick={() => setSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 30 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
+                                                <button onClick={() => setSelectedPeriod(15)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 15 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>15일</button>
+                                                <button onClick={() => setSelectedPeriod(7)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 7 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>7일</button>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* v13 신규: 상품명 검색 입력창 */}
+                                        <div className="relative w-full sm:w-64">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                placeholder="상품명 검색..." 
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-colors text-slate-700"
+                                            />
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* v12: 우측 영역을 flex-col로 변경하여 상단(히스토리), 하단(버튼들)으로 분리 배치 */}
                                 <div className="flex flex-col items-end gap-3 w-full xl:w-auto mt-2 xl:mt-0">
                                     
                                     {histories.length > 0 && (
@@ -585,23 +609,24 @@
                             </div>
                         )}
 
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        {/* v13: 틀고정 복구를 위해 overflow-hidden 제거 */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
                             <table className="w-full min-w-[750px] text-sm text-slate-600 table-fixed">
                                 <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                     <tr>
-                                        <th scope="col" className="w-[45%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left">
+                                        {/* 양끝 모서리 라운딩(rounded-tl-2xl, rounded-tr-2xl) 추가 */}
+                                        <th scope="col" className="w-[45%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left rounded-tl-2xl">
                                             <div className="flex justify-between items-center w-full">
                                                 <span>상품명</span>
                                                 <span className="text-right w-16 shrink-0">총재고</span>
                                             </div>
                                         </th>
-                                        {/* v11: 헤더에 해당 기간의 실제 달력 구간 표시 추가 */}
                                         <th scope="col" className="w-[18%] px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-right leading-tight">
                                             출고수량({selectedPeriod}일)<br/>
                                             {displayDateRange && <span className="text-[12px] font-bold text-slate-400 tracking-tighter">({displayDateRange})</span>}
                                         </th>
                                         <th scope="col" className="w-[15%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-right">일평균</th>
-                                        <th scope="col" className="w-[22%] px-4 py-4 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-right">예상 소진일</th>
+                                        <th scope="col" className="w-[22%] px-4 py-4 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-right rounded-tr-2xl">예상 소진일</th>
                                     </tr>
                                 </thead>
                                 <tbody>
