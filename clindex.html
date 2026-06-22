@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>CL 시스템 재고 관리 (v24)</title>
+    <title>CL 시스템 재고 관리 (v30)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -250,7 +250,6 @@
 
                         const h1NameIdx = findIdx(header1, ['상품명', '자사 상품명'], 4);
                         const h1StockIdx = findIdx(header1, ['가용재고', '현재고', '총재고'], 5); 
-                        // v24: 안전재고 인덱스 탐색 추가
                         const h1SafeStockIdx = findIdx(header1, ['안전재고'], 9); 
 
                         const h2DateIdx = findIdx(header2, ['출고일시', '주문일'], 6);
@@ -329,7 +328,6 @@
                             const stockStr = String(row[h1StockIdx] || "0").replace(/,/g, '');
                             const stock = parseFloat(stockStr) || 0; 
                             
-                            // v24: 안전재고 데이터 파싱
                             const safeStockStr = String(row[h1SafeStockIdx] || "0").replace(/,/g, '');
                             const safeStock = parseFloat(safeStockStr) || 0;
 
@@ -340,7 +338,7 @@
                             parsedItems.push({
                                 itemName,
                                 stock,
-                                safeStock, // 파싱된 안전재고 추가
+                                safeStock,
                                 out_30: outData.out_30,
                                 out_15: outData.out_15,
                                 out_7: outData.out_7,
@@ -479,7 +477,7 @@
                     
                     return {
                         ...item,
-                        safeStock: item.safeStock || 0, // 과거 데이터 예외 처리
+                        safeStock: item.safeStock || 0, 
                         _outboundToDisplay: outbound,
                         _dailyToDisplay: daily,
                         _availableDays: availableDays,
@@ -518,7 +516,7 @@
                     const rowData = {
                         "상품명": item._displayName,
                         "총재고": item.stock,
-                        "안전재고": item.safeStock, // 엑셀 다운로드에 안전재고 추가
+                        "안전재고": item.safeStock, 
                         [dynamicColName]: item._outboundToDisplay
                     };
                     
@@ -603,7 +601,7 @@
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                                📊 CL 시스템 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v24)</span>
+                                📊 CL 시스템 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v30)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
@@ -746,8 +744,8 @@
                         )}
 
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
-                            {/* v26: 테이블 스크롤 컨테이너 높이 대폭 확장 (max-h-[65vh] 적용) */}
-                            <div className="max-h-[65vh] overflow-y-auto custom-scrollbar">
+                            {/* v30: 이상적인 크기(캡처 이미지)에 맞춰 800px 절대값으로 롤백 및 고정 */}
+                            <div style={{ maxHeight: '800px' }} className="overflow-y-auto custom-scrollbar">
                                 <table className="w-full min-w-[850px] text-sm text-slate-600 table-fixed">
                                     <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                         <tr>
