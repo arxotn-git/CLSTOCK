@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>CL 시스템 재고 관리 (v41)</title>
+    <title>CL 시스템 재고 관리 (v43)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -183,23 +183,6 @@
                 }
             };
 
-            const handleDeleteHistory = async () => {
-                if (!firebaseRefs || !selectedHistoryId) return;
-                
-                const isConfirmed = window.confirm("현재 선택된 히스토리 내역을 완전히 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다.)");
-                if (!isConfirmed) return;
-
-                try {
-                    const { db, appId, doc, deleteDoc } = firebaseRefs;
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory_history', selectedHistoryId);
-                    await deleteDoc(docRef);
-                    setToastMessage("지정하신 히스토리가 성공적으로 삭제되었습니다.");
-                } catch (error) {
-                    console.error("Delete history error:", error);
-                    alert("히스토리 삭제 중 오류가 발생했습니다.");
-                }
-            };
-
             const parseExcelDate = (val) => {
                 if (!val) return null;
                 if (val instanceof Date) {
@@ -216,7 +199,6 @@
             };
 
             const handleFileUpload = async (e) => {
-                // v40: 여러 파일을 동시에 업로드할 수 있도록 배열로 변환
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
 
@@ -230,7 +212,6 @@
                     let hasParsedStockHeader = false;
                     let hasParsedOutboundHeader = false;
 
-                    // 여러 파일을 병렬로 읽어들임
                     const fileReads = files.map(file => {
                         return new Promise((resolve, reject) => {
                             const reader = new FileReader();
@@ -479,7 +460,7 @@
                     }
                 } finally {
                     setIsUploading(false);
-                    e.target.value = null; // 입력 초기화
+                    e.target.value = null;
                 }
             };
 
@@ -715,7 +696,7 @@
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                                📊 CL 시스템 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v41)</span>
+                                📊 CL 시스템 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v43)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
@@ -739,12 +720,22 @@
                         </div>
                         
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+                            {/* v43: 기존 버튼 (좌측) */}
                             <a 
                                 href="https://arxotn-git.github.io/yorgo" 
-                                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-sm font-bold rounded-lg shadow-sm transition-colors flex justify-center items-center gap-2"
+                                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-sm font-bold rounded-lg shadow-sm transition-colors flex justify-center items-center gap-2 whitespace-nowrap"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                                 로켓 & N배송 재고 현황
+                            </a>
+                            
+                            {/* v43: 신규 버튼 (우측, 에러 나던 아이콘 정상적이고 안정적인 아이콘으로 교체 및 사이즈 락 적용) */}
+                            <a 
+                                href="https://arxotn-git.github.io/receiving/receiving_index.html" 
+                                className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-sm font-bold rounded-lg shadow-sm transition-colors flex justify-center items-center gap-2 whitespace-nowrap"
+                            >
+                                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                                이지어드민 입고 내역
                             </a>
                         </div>
                     </header>
@@ -754,7 +745,6 @@
                         {currentData && (
                             <div className="flex flex-col gap-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 border-l-4 border-l-indigo-500">
                                 
-                                {/* v41: 상단 라인 (타이틀 & 뷰모드 전환) */}
                                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                     <div>
                                         <div className="flex items-center gap-2 mb-1">
@@ -780,10 +770,8 @@
                                     </div>
                                 </div>
 
-                                {/* v41: 하단 라인 (컨트롤 패널 좌/우 가로축 완벽 정렬) */}
                                 <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
                                     
-                                    {/* 좌측: 기간 설정 및 검색 */}
                                     <div className="flex flex-wrap items-center gap-3">
                                         {viewMode === 'period' ? (
                                             <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
@@ -814,7 +802,6 @@
                                         </div>
                                     </div>
 
-                                    {/* 우측: 다운로드 및 품절 예상 기능 (좌측 요소들과 같은 높이선 유지) */}
                                     <div className="flex flex-wrap items-center justify-end gap-3 w-full xl:w-auto">
                                         <button 
                                             onClick={() => setShowWarningOnly(!showWarningOnly)}
@@ -844,14 +831,12 @@
                                 <table className="w-full min-w-[850px] text-sm text-slate-600 table-fixed border-collapse">
                                     <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                         <tr>
-                                            {/* v41: 상품명 너비 축소(28%), 총재고/안전재고 중앙 정렬, 더미 컬럼 할당으로 뷰 모드 전환 시 완벽 고정 */}
                                             <th scope="col" className="w-[28%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left transition-all">
                                                 상품명
                                             </th>
                                             <th scope="col" className="w-[10%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all">
                                                 총재고
                                             </th>
-                                            {/* 안전재고 열 배경색 구분 */}
                                             <th scope="col" className="w-[10%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-slate-200/50 transition-all">
                                                 안전재고
                                             </th>
@@ -886,7 +871,6 @@
                                                             <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-800' : 'text-slate-900'}`}>
                                                                 {item.stock.toLocaleString()}
                                                             </td>
-                                                            {/* 안전재고 옅은 회색 배경 적용 (경고 시 옅은 붉은색) */}
                                                             <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-800 bg-red-100/50' : 'text-slate-500 bg-slate-100/80'}`}>
                                                                 {item.safeStock.toLocaleString()}
                                                             </td>
@@ -937,7 +921,6 @@
                                 <span className="text-xs text-slate-400">데이터는 자동으로 클라우드에 안전하게 저장됩니다.</span>
                             </div>
                             <div className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors relative ${isUploading ? 'border-slate-300 bg-slate-50' : 'border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 cursor-pointer'}`}>
-                                {/* v40: multiple 속성을 추가하여 여러 파일을 동시에 첨부할 수 있게 지원 */}
                                 <input type="file" multiple accept=".xlsx,.xls,.csv" onChange={handleFileUpload} disabled={isUploading} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10 disabled:cursor-not-allowed"/>
                                 {isUploading ? (
                                     <div className="flex flex-col items-center justify-center">
