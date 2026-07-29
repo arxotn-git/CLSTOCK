@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v54)</title>
+    <title>요미몬 재고 관리 (v55)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -423,7 +423,8 @@
                         const finalWkItems = Array.from(wkItemsMap.values());
                         if (finalWkItems.length > 0) {
                             const newDocData = { version: `V${wkHistories.length + 1}`, createdAt: new Date().toISOString(), items: finalWkItems };
-                            const collRef = collection(firebaseRefs.db, 'artifacts', firebaseRefs.appId, 'public', 'data', 'weekeep_inventory');
+                            const { db, appId, collection, addDoc } = firebaseRefs;
+                            const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'weekeep_inventory');
                             const newDoc = await addDoc(collRef, newDocData);
                             setWkSelectedHistoryId(newDoc.id);
                             msgArr.push("위킵 재고");
@@ -569,7 +570,8 @@
                         });
 
                         const newDocData = { version: `V${histories.length + 1}`, createdAt: new Date().toISOString(), baseDate: baseTime, items: finalItems };
-                        const collRef = collection(firebaseRefs.db, 'artifacts', firebaseRefs.appId, 'public', 'data', 'inventory_history');
+                        const { db, appId, collection, addDoc } = firebaseRefs;
+                        const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'inventory_history');
                         const newDoc = await addDoc(collRef, newDocData);
                         setSelectedHistoryId(newDoc.id);
                         msgArr.push("CL 시스템");
@@ -855,7 +857,7 @@
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v54)</span>
+                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v55)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
