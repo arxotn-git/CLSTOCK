@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v57)</title>
+    <title>요미몬 재고 관리 (v58)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -86,6 +86,13 @@
             const [wkSearchKeyword, setWkSearchKeyword] = useState("");
             const [totalSearchKeyword, setTotalSearchKeyword] = useState("");
             const [showDetailedStock, setShowDetailedStock] = useState(false); // v54: CL/위킵 상세 컬럼 토글
+
+            // v58: 위킵 탭도 CL 탭과 동일하게 기간별/일자지정 분석 + 30일 이내 품절 필터 제공
+            const [wkViewMode, setWkViewMode] = useState("period");
+            const [wkSelectedPeriod, setWkSelectedPeriod] = useState(30);
+            const [wkCustomStartDate, setWkCustomStartDate] = useState("");
+            const [wkCustomEndDate, setWkCustomEndDate] = useState("");
+            const [wkShowWarningOnly, setWkShowWarningOnly] = useState(false);
 
             useEffect(() => {
                 const handleOnline = () => setServerStatus("connected");
@@ -612,31 +619,57 @@
             const currentData = useMemo(() => histories.find(h => h.id === selectedHistoryId) || null, [histories, selectedHistoryId]);
             const wkCurrentData = useMemo(() => wkHistories.find(h => h.id === wkSelectedHistoryId) || null, [wkHistories, wkSelectedHistoryId]);
 
-            // v57: 위킵 스냅샷 간 가용재고 증감 비교로 출고수량 산출
-            // 로직: 이전 스냅샷 대비 재고가 "감소"한 만큼 = 출고, "증가"한 만큼 = 입고/이관(0으로 처리, 음수 출고 방지)
-            // 최초 시점재고(7/23) 이후 업로드된 스냅샷들을 순서대로 비교하여 선택된 시점까지 누적
-            const wkOutboundData = useMemo(() => {
+            // v58: 위킵 스냅샷 간 가용재고 증감 비교로 "일자별" 출고수량 맵 산출 (CL의 item.daily와 동일한 구조)
+            // 로직: 이전 스냅샷 대비 재고가 "감소"한 만큼 = 출고(해당 스냅샷 업로드일에 귀속), "증가"한 만큼 = 입고/이관(0으로 처리, 음수 출고 방지)
+            // 최초 시점재고(7/23) 이후 업로드된 스냅샷들을 순서대로 비교하여 선택된 시점까지의 일자별 출고 데이터를 누적
+            const wkDailyOutboundMap = useMemo(() => {
                 if (!wkCurrentData || wkHistories.length === 0) return {};
                 const sortedAsc = [...wkHistories].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
                 const selectedIdx = sortedAsc.findIndex(h => h.id === wkSelectedHistoryId);
                 if (selectedIdx <= 0) return {}; // 최초 시점재고(기준) 자체는 출고량 없음
 
-                const outboundMap = {};
+                const dailyMap = {}; // itemName -> { 'YYYY-MM-DD': qty }
                 for (let i = 1; i <= selectedIdx; i++) {
                     const prevMap = new Map((sortedAsc[i - 1].items || []).map(it => [it.itemName, it.stock || 0]));
+                    const snapDate = new Date(sortedAsc[i].createdAt);
+                    const dateKey = `${snapDate.getFullYear()}-${String(snapDate.getMonth() + 1).padStart(2, '0')}-${String(snapDate.getDate()).padStart(2, '0')}`;
                     (sortedAsc[i].items || []).forEach(it => {
                         if (!prevMap.has(it.itemName)) return; // 신규 등록 품목은 비교 기준이 없어 스킵
                         const prevStock = prevMap.get(it.itemName);
                         const currStock = it.stock || 0;
                         const delta = prevStock - currStock;
                         if (delta > 0) {
-                            outboundMap[it.itemName] = (outboundMap[it.itemName] || 0) + delta;
+                            if (!dailyMap[it.itemName]) dailyMap[it.itemName] = {};
+                            dailyMap[it.itemName][dateKey] = (dailyMap[it.itemName][dateKey] || 0) + delta;
                         }
                         // delta <= 0 (재고 증가)인 구간은 입고/이관으로 간주하여 출고수량에 반영하지 않음
                     });
                 }
-                return outboundMap;
+                return dailyMap;
             }, [wkHistories, wkSelectedHistoryId, wkCurrentData]);
+
+            useEffect(() => {
+                if (wkCurrentData && wkCurrentData.createdAt) {
+                    const end = new Date(wkCurrentData.createdAt);
+                    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                    setWkCustomEndDate(fmt(end)); setWkCustomStartDate(fmt(end));
+                }
+            }, [wkCurrentData]);
+
+            const wkDisplayDateRange = useMemo(() => {
+                if (!wkCurrentData || !wkCurrentData.createdAt) return "";
+                if (wkViewMode === 'period') {
+                    const end = new Date(wkCurrentData.createdAt);
+                    const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - (wkSelectedPeriod - 1));
+                    return `${start.getMonth()+1}/${start.getDate()} ~ ${end.getMonth()+1}/${end.getDate()}`;
+                } else {
+                    if (!wkCustomStartDate || !wkCustomEndDate) return "날짜를 선택해주세요";
+                    const start = new Date(wkCustomStartDate); const end = new Date(wkCustomEndDate);
+                    if (start.getTime() === end.getTime()) return `${start.getMonth()+1}/${start.getDate()}`;
+                    const minDate = start < end ? start : end; const maxDate = start > end ? start : end;
+                    return `${minDate.getMonth()+1}/${minDate.getDate()} ~ ${maxDate.getMonth()+1}/${maxDate.getDate()}`;
+                }
+            }, [wkCurrentData, wkSelectedPeriod, wkViewMode, wkCustomStartDate, wkCustomEndDate]);
 
             useEffect(() => {
                 if (currentData && currentData.baseDate) {
@@ -714,11 +747,54 @@
 
             const wkProcessedItems = useMemo(() => {
                 if (!wkCurrentData) return [];
-                let items = wkCurrentData.items.map(item => ({ ...item, _outboundQty: wkOutboundData[item.itemName] || 0 }));
+                let sTime = 0, eTime = 0;
+                if (wkViewMode === 'custom' && wkCustomStartDate && wkCustomEndDate) {
+                    const parseSafe = (dStr, isEnd) => {
+                        const [y, m, d] = dStr.split('-');
+                        return isEnd ? new Date(y, m - 1, d, 23, 59, 59, 999).getTime() : new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+                    };
+                    sTime = parseSafe(wkCustomStartDate, false); eTime = parseSafe(wkCustomEndDate, true);
+                    if (sTime > eTime) { const temp = sTime; sTime = eTime; eTime = temp; }
+                }
+
+                let items = wkCurrentData.items.map(item => {
+                    const dailyMap = wkDailyOutboundMap[item.itemName] || {};
+                    const totalOutboundQty = Object.values(dailyMap).reduce((s, v) => s + v, 0);
+
+                    let outbound = 0; let periodToUse = wkSelectedPeriod || 30;
+                    if (wkViewMode === 'period' && wkCurrentData.createdAt) {
+                        const end = new Date(wkCurrentData.createdAt);
+                        const startT = new Date(end.getFullYear(), end.getMonth(), end.getDate() - (wkSelectedPeriod - 1), 0, 0, 0, 0).getTime();
+                        const endT = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime();
+                        Object.entries(dailyMap).forEach(([dStr, amt]) => {
+                            const [y, m, d] = dStr.split('-');
+                            const dt = new Date(y, m - 1, d, 12, 0, 0).getTime();
+                            if (dt >= startT && dt <= endT) outbound += amt;
+                        });
+                        periodToUse = wkSelectedPeriod;
+                    } else if (wkViewMode === 'custom') {
+                        if (sTime > 0 && eTime > 0) {
+                            Object.entries(dailyMap).forEach(([dStr, amt]) => {
+                                const [y, m, d] = dStr.split('-');
+                                const dt = new Date(y, m - 1, d, 12, 0, 0).getTime();
+                                if (dt >= sTime && dt <= eTime) outbound += amt;
+                            });
+                            periodToUse = Math.max(1, Math.ceil((eTime - sTime) / 86400000));
+                        }
+                    }
+
+                    const daily = outbound / periodToUse;
+                    let availableDays = null;
+                    if (daily > 0) availableDays = Math.floor((item.stock || 0) / daily);
+
+                    return { ...item, _outboundQty: totalOutboundQty, _outboundToDisplay: outbound, _dailyToDisplay: daily, _availableDays: availableDays };
+                });
+
                 if (wkSearchKeyword) items = items.filter(i => i.itemName.toLowerCase().includes(wkSearchKeyword.toLowerCase()));
+                if (wkShowWarningOnly) items = items.filter(i => i._availableDays !== null && i._availableDays < 30 && (i.stock || 0) > 0);
                 items.sort((a, b) => a.itemName.localeCompare(b.itemName, 'ko', { numeric: true }));
                 return items;
-            }, [wkCurrentData, wkSearchKeyword, wkOutboundData]);
+            }, [wkCurrentData, wkSearchKeyword, wkDailyOutboundMap, wkViewMode, wkSelectedPeriod, wkCustomStartDate, wkCustomEndDate, wkShowWarningOnly]);
 
             // v54: CL + 위킵 데이터 통합 계산 엔진 (총재고 탭 리스트용)
             const combinedItems = useMemo(() => {
@@ -794,6 +870,7 @@
                 }
 
                 let dynamicColName = viewMode === 'period' ? `출고수량(${selectedPeriod}일)` : `출고수량(${displayDateRange})`;
+                let wkDynamicColName = wkViewMode === 'period' ? `출고수량(${wkSelectedPeriod}일)` : `출고수량(${wkDisplayDateRange})`;
 
                 const exportData = sourceData.map(item => {
                     if (activeTab === 'total') {
@@ -813,11 +890,14 @@
                             "상품명": item.itemName,
                             "가용재고(위킵)": item.stock,
                             "안전재고": item.safeStock || 0,
-                            "출고수량(누적)": item._outboundQty || 0,
+                            [wkDynamicColName]: item._outboundToDisplay || 0,
+                            "일평균": item._outboundToDisplay > 0 ? item._dailyToDisplay.toFixed(1) : "-",
+                            "예상 소진일(일)": item._availableDays === null ? "출고 없음" : item._availableDays,
+                            "출고수량(전체 누적)": item._outboundQty || 0,
                             "유보재고": item.reservedStock,
                             "하자재고": item.defectiveStock,
-                            "월평균출고": item.avgMonthlyOut,
-                            "일평균출고": item.avgDailyOut
+                            "월평균출고(원본)": item.avgMonthlyOut,
+                            "일평균출고(원본)": item.avgDailyOut
                         };
                     } else {
                         return {
@@ -896,7 +976,7 @@
                                 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 cursor-pointer hover:opacity-70 transition-opacity"
                                 title="새로고침"
                             >
-                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v57)</span>
+                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v58)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
@@ -1244,67 +1324,96 @@
                                 <div className="flex flex-col gap-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 border-l-4 border-l-orange-500">
                                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                         <div>
-                                            <h2 className="text-lg font-bold text-slate-800">위킵(FBW) 재고 리포트</h2>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h2 className="text-lg font-bold text-slate-800">위킵(FBW) 재고 분석 리포트</h2>
+                                                {wkDisplayDateRange && <span className="bg-orange-50 border border-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-md">🗓️ 집계구간: {wkDisplayDateRange}</span>}
+                                            </div>
                                             <p className="text-sm text-slate-500">{wkCurrentData ? `마지막 업데이트: ${formatDate(wkCurrentData.createdAt)}` : '아직 업로드된 위킵 데이터가 없습니다.'}</p>
                                         </div>
-                                        <div className="relative flex items-center w-full md:w-auto max-w-xs">
-                                            <div className="absolute left-3 text-slate-400">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                                            </div>
-                                            <input
-                                                type="text" placeholder="상품명 검색..." value={wkSearchKeyword} onChange={(e) => setWkSearchKeyword(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-orange-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all shadow-sm placeholder:text-slate-400"
-                                            />
+                                        <div className="flex bg-slate-100 p-1 rounded-lg w-fit">
+                                            <button onClick={() => setWkViewMode('period')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition-colors ${wkViewMode === 'period' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>기간별 분석</button>
+                                            <button onClick={() => setWkViewMode('custom')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition-colors ${wkViewMode === 'custom' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>일자 직접 지정</button>
                                         </div>
                                     </div>
-                                    <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                                        <div className="flex items-center gap-3">
-                                            <div className="bg-orange-50 border border-orange-100 px-4 py-2 rounded-lg text-sm font-semibold text-orange-700">총 <span className="font-black">{wkProcessedItems.length}</span>개 품목</div>
-                                            <div className="bg-slate-100 px-4 py-2 rounded-lg text-sm font-semibold text-slate-700">가용재고 합계 <span className="font-black text-orange-600">{wkProcessedItems.reduce((s, i) => s + i.stock, 0).toLocaleString()}</span>개</div>
+                                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
+                                        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                                            {wkViewMode === 'period' ? (
+                                                <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                                                    <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => setWkSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${wkSelectedPeriod === 30 ? 'bg-white shadow-sm text-orange-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
+                                                        <button onClick={() => setWkSelectedPeriod(15)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${wkSelectedPeriod === 15 ? 'bg-white shadow-sm text-orange-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>15일</button>
+                                                        <button onClick={() => setWkSelectedPeriod(7)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${wkSelectedPeriod === 7 ? 'bg-white shadow-sm text-orange-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>7일</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 bg-orange-50 p-1.5 rounded-xl border border-orange-200">
+                                                    <span className="text-sm font-bold text-orange-800 pl-2">출고일 구간:</span>
+                                                    <input type="date" value={wkCustomStartDate} onChange={(e) => setWkCustomStartDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-orange-500"/>
+                                                    <span className="text-orange-400 font-bold">~</span>
+                                                    <input type="date" value={wkCustomEndDate} onChange={(e) => setWkCustomEndDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-orange-500"/>
+                                                </div>
+                                            )}
+                                            <div className="relative flex items-center w-full sm:w-auto flex-grow max-w-xs">
+                                                <div className="absolute left-3 text-slate-400">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                                </div>
+                                                <input
+                                                    type="text" placeholder="상품명 검색..." value={wkSearchKeyword} onChange={(e) => setWkSearchKeyword(e.target.value)}
+                                                    className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-orange-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all shadow-sm placeholder:text-slate-400"
+                                                />
+                                            </div>
                                         </div>
-                                        <button onClick={exportToExcel} className="px-4 py-2.5 rounded-lg text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                                            엑셀 다운로드
-                                        </button>
+                                        <div className="flex flex-wrap items-center justify-end gap-2 w-full xl:w-auto">
+                                            <button onClick={() => setWkShowWarningOnly(!wkShowWarningOnly)} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${wkShowWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+                                                {wkShowWarningOnly ? '전체 보기' : '🚨 30일 이내 품절'}
+                                            </button>
+                                            <button onClick={exportToExcel} className="px-4 py-2.5 rounded-lg text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                                엑셀 다운로드
+                                            </button>
+                                            <div className="bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700">총 <span className="text-orange-600">{wkProcessedItems.length}</span>개</div>
+                                        </div>
                                     </div>
                                 </div>
 
                                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
                                     <div style={{ maxHeight: '800px' }} className="overflow-y-auto custom-scrollbar">
-                                        <table className="w-full min-w-[850px] text-sm text-slate-600 table-fixed border-collapse">
+                                        <table className="w-full min-w-[950px] text-sm text-slate-600 table-fixed border-collapse">
                                             <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                                 <tr>
-                                                    <th scope="col" className="w-[24%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left">상품명</th>
-                                                    <th scope="col" className="w-[11%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">가용재고</th>
-                                                    <th scope="col" className="w-[11%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-slate-200/50">안전재고</th>
-                                                    <th scope="col" className="w-[11%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-orange-50">출고수량</th>
-                                                    <th scope="col" className="w-[11%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">유보재고</th>
-                                                    <th scope="col" className="w-[11%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">하자재고</th>
-                                                    <th scope="col" className="w-[10%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">월평균출고</th>
-                                                    <th scope="col" className="w-[11%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">일평균출고</th>
+                                                    <th scope="col" className="w-[20%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left">상품명</th>
+                                                    <th scope="col" className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">가용재고</th>
+                                                    <th scope="col" className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-slate-200/50">안전재고</th>
+                                                    <th scope="col" className="w-[13%] px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight">{wkViewMode === 'period' ? `출고수량(${wkSelectedPeriod}일)` : '지정일 출고수량'}</th>
+                                                    <th scope="col" className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">일평균</th>
+                                                    <th scope="col" className="w-[16%] px-4 py-4 text-[15px] font-extrabold text-orange-900 bg-orange-100/50 border-b-2 border-orange-200 text-center">예상 소진일</th>
+                                                    <th scope="col" className="w-[12%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">유보재고</th>
+                                                    <th scope="col" className="w-[12%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">하자재고</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {wkProcessedItems.length > 0 ? (
-                                                    wkProcessedItems.map((item, idx) => (
-                                                        <tr key={idx} className="border-t border-slate-100 bg-white hover:bg-slate-50 transition-colors">
-                                                            <td className="px-4 py-4"><div className="font-bold truncate text-slate-800" title={item.itemName}>{item.itemName}</div></td>
-                                                            <td className="px-4 py-4 text-center font-black text-[15px] text-orange-600">{(item.stock || 0).toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center font-black text-[15px] text-slate-500 bg-slate-100/80">{(item.safeStock || 0).toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center font-black text-[15px] text-orange-700 bg-orange-50/60">{(item._outboundQty || 0).toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center font-semibold text-slate-600">{(item.reservedStock || 0).toLocaleString()}</td>
-                                                            <td className={`px-4 py-4 text-center font-semibold ${(item.defectiveStock || 0) > 0 ? 'text-red-600' : 'text-slate-400'}`}>{(item.defectiveStock || 0).toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center text-slate-600">{(item.avgMonthlyOut || 0).toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center text-slate-600">{(item.avgDailyOut || 0).toLocaleString()}</td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan="8" className="px-6 py-16 text-center text-slate-500 font-medium border-t border-slate-100">
-                                                            {wkCurrentData ? '검색 조건에 일치하는 품목이 없습니다.' : '등록된 데이터가 없습니다. 하단 통합 엑셀 업로드를 통해 데이터를 추가해주세요.'}
-                                                        </td>
-                                                    </tr>
-                                                )}
+                                                {wkCurrentData ? (
+                                                    wkProcessedItems.length > 0 ? (
+                                                        wkProcessedItems.map((item, idx) => {
+                                                            const isWarning = item._availableDays !== null && item._availableDays < 30;
+                                                            return (
+                                                                <tr key={idx} className={`border-t border-slate-100 transition-colors ${isWarning ? 'bg-red-50 hover:bg-red-100' : 'bg-white hover:bg-slate-50'}`}>
+                                                                    <td className="px-4 py-4"><div className={`font-bold truncate ${isWarning ? 'text-red-900' : 'text-slate-800'}`} title={item.itemName}>{item.itemName}</div></td>
+                                                                    <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-800' : 'text-orange-600'}`}>{(item.stock || 0).toLocaleString()}</td>
+                                                                    <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-800 bg-red-100/50' : 'text-slate-500 bg-slate-100/80'}`}>{(item.safeStock || 0).toLocaleString()}</td>
+                                                                    <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-800' : 'text-slate-700'}`}>{(item._outboundToDisplay || 0).toLocaleString()}</td>
+                                                                    <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-700' : 'text-slate-600'}`}>{item._outboundToDisplay > 0 ? item._dailyToDisplay.toFixed(1) : '-'}</td>
+                                                                    <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-600' : 'text-orange-600'}`}>
+                                                                        {item._availableDays === null ? <span className="text-slate-400 font-bold text-[14px]">출고 없음</span> : <span>{item._availableDays.toLocaleString()} 일</span>}
+                                                                    </td>
+                                                                    <td className="px-4 py-4 text-center font-semibold text-slate-600">{(item.reservedStock || 0).toLocaleString()}</td>
+                                                                    <td className={`px-4 py-4 text-center font-semibold ${(item.defectiveStock || 0) > 0 ? 'text-red-600' : 'text-slate-400'}`}>{(item.defectiveStock || 0).toLocaleString()}</td>
+                                                                </tr>
+                                                            );
+                                                        })
+                                                    ) : ( <tr><td colSpan="8" className="px-6 py-16 text-center text-slate-500 font-medium border-t border-slate-100">검색 조건에 일치하는 품목이 없습니다.</td></tr> )
+                                                ) : ( <tr><td colSpan="8" className="px-6 py-16 text-center text-slate-500 font-medium border-t border-slate-100">등록된 데이터가 없습니다. 하단 통합 엑셀 업로드를 통해 데이터를 추가해주세요.</td></tr> )}
                                             </tbody>
                                         </table>
                                     </div>
