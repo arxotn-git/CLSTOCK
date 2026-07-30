@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v55)</title>
+    <title>요미몬 재고 관리 (v56)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -384,6 +384,8 @@
                             const safeIdx = findIdx(['안전재고'], 10);
                             const reservedIdx = findIdx(['유보재고'], 11);
                             const defectiveIdx = findIdx(['하자재고'], 12);
+                            const monthlyOutIdx = findIdx(['월평균출고량'], 7); // v56 누락 컬럼 추가
+                            const dailyOutIdx = findIdx(['일평균출고량'], 8); // v56 누락 컬럼 추가
 
                             sheetData.forEach((row, idx) => {
                                 if (idx === 0 || !row || row.length === 0) return;
@@ -391,7 +393,13 @@
                                 if (!itemName || itemName === '상품명') return;
                                 const toNum = (v) => parseFloat(String(v || '0').replace(/,/g, '')) || 0;
                                 wkItemsMap.set(itemName, {
-                                    itemName, stock: toNum(row[availIdx]), safeStock: toNum(row[safeIdx]), reservedStock: toNum(row[reservedIdx]), defectiveStock: toNum(row[defectiveIdx])
+                                    itemName, 
+                                    stock: toNum(row[availIdx]), 
+                                    safeStock: toNum(row[safeIdx]), 
+                                    reservedStock: toNum(row[reservedIdx]), 
+                                    defectiveStock: toNum(row[defectiveIdx]),
+                                    avgMonthlyOut: toNum(row[monthlyOutIdx]), 
+                                    avgDailyOut: toNum(row[dailyOutIdx])
                                 });
                             });
                         } else if (wb.SheetNames.length >= 2 && !file.name.toLowerCase().includes('.csv')) {
@@ -856,8 +864,12 @@
 
                     <header className="glass-effect relative z-30 border-b border-slate-200 px-6 py-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                            <h1 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 cursor-pointer select-none" onClick={() => window.location.reload()} title="새로고침">
-                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v55)</span>
+                            <h1 
+                                onClick={() => window.location.reload()}
+                                className="text-xl font-extrabold text-slate-800 flex items-center gap-2 cursor-pointer hover:opacity-70 transition-opacity"
+                                title="새로고침"
+                            >
+                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v56)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
@@ -1249,16 +1261,20 @@
                                                     wkProcessedItems.map((item, idx) => (
                                                         <tr key={idx} className="border-t border-slate-100 bg-white hover:bg-slate-50 transition-colors">
                                                             <td className="px-4 py-4"><div className="font-bold truncate text-slate-800" title={item.itemName}>{item.itemName}</div></td>
-                                                            <td className="px-4 py-4 text-center font-black text-[15px] text-orange-600">{item.stock.toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center font-black text-[15px] text-slate-500 bg-slate-100/80">{item.safeStock.toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center font-semibold text-slate-600">{item.reservedStock.toLocaleString()}</td>
-                                                            <td className={`px-4 py-4 text-center font-semibold ${item.defectiveStock > 0 ? 'text-red-600' : 'text-slate-400'}`}>{item.defectiveStock.toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center text-slate-600">{item.avgMonthlyOut.toLocaleString()}</td>
-                                                            <td className="px-4 py-4 text-center text-slate-600">{item.avgDailyOut.toLocaleString()}</td>
+                                                            <td className="px-4 py-4 text-center font-black text-[15px] text-orange-600">{(item.stock || 0).toLocaleString()}</td>
+                                                            <td className="px-4 py-4 text-center font-black text-[15px] text-slate-500 bg-slate-100/80">{(item.safeStock || 0).toLocaleString()}</td>
+                                                            <td className="px-4 py-4 text-center font-semibold text-slate-600">{(item.reservedStock || 0).toLocaleString()}</td>
+                                                            <td className={`px-4 py-4 text-center font-semibold ${(item.defectiveStock || 0) > 0 ? 'text-red-600' : 'text-slate-400'}`}>{(item.defectiveStock || 0).toLocaleString()}</td>
+                                                            <td className="px-4 py-4 text-center text-slate-600">{(item.avgMonthlyOut || 0).toLocaleString()}</td>
+                                                            <td className="px-4 py-4 text-center text-slate-600">{(item.avgDailyOut || 0).toLocaleString()}</td>
                                                         </tr>
                                                     ))
                                                 ) : (
-                                                    <tr><td colSpan="7" className="px-6 py-16 text-center text-slate-500 font-medium border-t border-slate-100">{wkCurrentData ? '검색 조건에 일치하는 품목이 없습니다.' : '등록된 데이터가 없습니다. 통합 엑셀 업로드를 진행해 주세요.'}</td></tr>
+                                                    <tr>
+                                                        <td colSpan="7" className="px-6 py-16 text-center text-slate-500 font-medium border-t border-slate-100">
+                                                            {wkCurrentData ? '검색 조건에 일치하는 품목이 없습니다.' : '등록된 데이터가 없습니다. 하단 통합 엑셀 업로드를 통해 데이터를 추가해주세요.'}
+                                                        </td>
+                                                    </tr>
                                                 )}
                                             </tbody>
                                         </table>
