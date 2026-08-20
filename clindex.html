@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v58)</title>
+    <title>요미몬 재고 관리 (v64)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -54,6 +54,238 @@
 
     <script type="text/babel" data-type="module" data-presets="react-classic">
         const { useState, useEffect, useMemo } = React;
+
+        // v60: 시점 재고 조회용 날짜 선택 컴포넌트 — 특정 날짜의 과거 업로드 스냅샷을 선택
+        // v64: 네이티브 date input을 대체하는 커스텀 달력 컴포넌트 — 클릭 몇 번으로 월/일 선택 가능
+        const MiniDatePicker = ({ value, onChange, min, max, markedDates, theme }) => {
+            const [open, setOpen] = useState(false);
+
+            const themeMap = {
+                indigo: { selectedBg: 'bg-indigo-600', todayRing: 'ring-indigo-400', dot: 'bg-indigo-500', hoverBg: 'hover:bg-indigo-50', navHover: 'hover:bg-indigo-50 hover:text-indigo-600' },
+                orange: { selectedBg: 'bg-orange-500', todayRing: 'ring-orange-400', dot: 'bg-orange-500', hoverBg: 'hover:bg-orange-50', navHover: 'hover:bg-orange-50 hover:text-orange-600' },
+                slate: { selectedBg: 'bg-slate-800', todayRing: 'ring-slate-400', dot: 'bg-slate-500', hoverBg: 'hover:bg-slate-50', navHover: 'hover:bg-slate-100 hover:text-slate-700' }
+            };
+            const t = themeMap[theme] || themeMap.slate;
+
+            const parseYMD = (s) => { if (!s) return null; const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+            const fmtYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+            const selectedDate = parseYMD(value);
+            const todayStr = fmtYMD(new Date());
+            const [viewDate, setViewDate] = useState(selectedDate || new Date());
+
+            useEffect(() => { if (open) setViewDate(selectedDate || new Date()); }, [open]);
+
+            const year = viewDate.getFullYear();
+            const month = viewDate.getMonth();
+            const startOffset = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            const cells = [];
+            for (let i = 0; i < startOffset; i++) cells.push(null);
+            for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+            const minDate = min ? parseYMD(min) : null;
+            const maxDate = max ? parseYMD(max) : null;
+
+            const isDisabled = (d) => {
+                const dt = new Date(year, month, d);
+                if (minDate && dt < minDate) return true;
+                if (maxDate && dt > maxDate) return true;
+                return false;
+            };
+
+            const handlePick = (d) => {
+                if (isDisabled(d)) return;
+                onChange(fmtYMD(new Date(year, month, d)));
+                setOpen(false);
+            };
+
+            const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+
+            return (
+                <div className="relative inline-block">
+                    <button
+                        type="button"
+                        onClick={() => setOpen(!open)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 border border-slate-300 rounded-lg bg-white hover:bg-slate-50 transition-colors"
+                    >
+                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        {value || '날짜 선택'}
+                    </button>
+
+                    {open && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>
+                            <div className="absolute z-50 top-full mt-2 left-0 bg-white border border-slate-200 rounded-xl shadow-lg p-3 w-64">
+                                <div className="flex items-center justify-between mb-2">
+                                    <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))} className={`w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 font-bold transition-colors ${t.navHover}`}>‹</button>
+                                    <span className="text-sm font-bold text-slate-700">{year}년 {month + 1}월</span>
+                                    <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))} className={`w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 font-bold transition-colors ${t.navHover}`}>›</button>
+                                </div>
+                                <div className="grid grid-cols-7 gap-1 mb-1">
+                                    {weekdays.map(w => <div key={w} className="text-center text-[11px] font-bold text-slate-400 py-1">{w}</div>)}
+                                </div>
+                                <div className="grid grid-cols-7 gap-1">
+                                    {cells.map((d, idx) => {
+                                        if (d === null) return <div key={idx}></div>;
+                                        const dStr = fmtYMD(new Date(year, month, d));
+                                        const disabled = isDisabled(d);
+                                        const isSelected = value === dStr;
+                                        const isToday = todayStr === dStr;
+                                        const hasMark = markedDates && markedDates.has(dStr);
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={idx}
+                                                disabled={disabled}
+                                                onClick={() => handlePick(d)}
+                                                className={`relative w-8 h-8 text-xs font-bold rounded-lg transition-colors flex items-center justify-center
+                                                    ${disabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer ' + t.hoverBg}
+                                                    ${isSelected ? `${t.selectedBg} text-white hover:opacity-90` : ''}
+                                                    ${isToday && !isSelected ? `ring-1 ${t.todayRing}` : ''}
+                                                `}
+                                            >
+                                                {d}
+                                                {hasMark && !isSelected && <span className={`absolute bottom-0.5 w-1 h-1 rounded-full ${t.dot}`}></span>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        const HistoryDatePicker = ({ histories, selectedId, onSelect, theme, label }) => {
+            const [open, setOpen] = useState(false);
+            const [pickedDate, setPickedDate] = useState('');
+            const [matches, setMatches] = useState(null);
+            const [fallbackNotice, setFallbackNotice] = useState('');
+
+            const themeMap = {
+                indigo: { btn: 'border-indigo-300 text-indigo-700 hover:bg-indigo-50', ring: 'focus:border-indigo-500', activeBg: 'bg-indigo-600', chip: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                orange: { btn: 'border-orange-300 text-orange-700 hover:bg-orange-50', ring: 'focus:border-orange-500', activeBg: 'bg-orange-600', chip: 'bg-orange-50 text-orange-700 border-orange-200' },
+                slate: { btn: 'border-slate-300 text-slate-700 hover:bg-slate-50', ring: 'focus:border-slate-500', activeBg: 'bg-slate-800', chip: 'bg-slate-100 text-slate-700 border-slate-300' }
+            };
+            const t = themeMap[theme] || themeMap.slate;
+            const idleLabel = label ? `${label} 시점 재고` : '시점 재고';
+
+            const fmtDateOnly = (iso) => {
+                const d = new Date(iso);
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            };
+            const fmtTime = (iso) => {
+                const d = new Date(iso);
+                return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+            };
+
+            const sortedDesc = useMemo(() => [...histories].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [histories]);
+            const latestId = sortedDesc.length > 0 ? sortedDesc[0].id : null;
+            const isLatest = !selectedId || selectedId === latestId;
+            const selected = histories.find(h => h.id === selectedId) || null;
+
+            const availableDates = useMemo(() => {
+                const set = new Set(histories.map(h => fmtDateOnly(h.createdAt)));
+                return Array.from(set).sort();
+            }, [histories]);
+            const minDate = availableDates.length > 0 ? availableDates[0] : '';
+            const maxDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : '';
+
+            // v64: 선택한 날짜에 업로드 이력이 없으면 "전체 최신"이 아니라
+            // 선택한 날짜에서 가장 가까운 과거 날짜(없으면 가장 가까운 미래 날짜)의 데이터를 보여줌
+            const handleDateChange = (dateStr) => {
+                setPickedDate(dateStr);
+                if (!dateStr) { setMatches(null); setFallbackNotice(''); return; }
+
+                const exact = histories.filter(h => fmtDateOnly(h.createdAt) === dateStr).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                if (exact.length > 0) {
+                    setFallbackNotice('');
+                    setMatches(exact);
+                    if (exact.length === 1) {
+                        onSelect(exact[0].id);
+                        setOpen(false);
+                    }
+                    return;
+                }
+
+                setMatches(null);
+                const priorCandidates = sortedDesc.filter(h => fmtDateOnly(h.createdAt) < dateStr);
+                if (priorCandidates.length > 0) {
+                    const nearestDate = fmtDateOnly(priorCandidates[0].createdAt);
+                    const nearestDateItems = priorCandidates.filter(h => fmtDateOnly(h.createdAt) === nearestDate);
+                    const chosen = nearestDateItems[0];
+                    onSelect(chosen.id);
+                    setFallbackNotice(`선택하신 날짜(${dateStr})엔 업로드 이력이 없어, 가장 가까운 이전 날짜인 ${nearestDate} 데이터를 표시합니다.`);
+                } else {
+                    const earliest = sortedDesc[sortedDesc.length - 1];
+                    if (earliest) {
+                        onSelect(earliest.id);
+                        const earliestDate = fmtDateOnly(earliest.createdAt);
+                        setFallbackNotice(`선택하신 날짜(${dateStr}) 이전 이력이 없어, 가장 가까운 날짜인 ${earliestDate}(최초 업로드) 데이터를 표시합니다.`);
+                    }
+                }
+            };
+
+            const resetToLatest = () => {
+                onSelect(latestId);
+                setOpen(false);
+                setPickedDate('');
+                setMatches(null);
+                setFallbackNotice('');
+            };
+
+            return (
+                <div className="relative">
+                    <button
+                        onClick={() => setOpen(!open)}
+                        className={`px-4 py-2.5 rounded-lg text-sm font-bold border shadow-sm bg-white transition-colors flex items-center gap-2 whitespace-nowrap ${isLatest ? t.btn : 'bg-amber-50 text-amber-700 border-amber-300'}`}
+                    >
+                        📅 {isLatest || !selected ? idleLabel : `${label ? label + ' ' : ''}${fmtDateOnly(selected.createdAt)} ${fmtTime(selected.createdAt)}`}
+                    </button>
+
+                    {open && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>
+                            <div className="absolute z-50 top-full mt-2 right-0 bg-white border border-slate-200 rounded-xl shadow-lg p-4 w-72">
+                                <p className="text-xs font-bold text-slate-500 mb-2">{label ? `${label} ` : ''}조회할 날짜 선택</p>
+                                <MiniDatePicker value={pickedDate} onChange={handleDateChange} theme={theme} markedDates={new Set(availableDates)} />
+                                <p className="text-[11px] text-slate-400 mt-2 mb-3">업로드 이력이 있는 날짜: {minDate && maxDate ? `${minDate} ~ ${maxDate}` : '없음'} ({availableDates.length}일) · 점이 찍힌 날짜가 업로드 이력이 있는 날짜입니다.</p>
+
+                                {fallbackNotice && (
+                                    <p className="text-xs text-amber-700 font-semibold mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                        ⚠️ {fallbackNotice}
+                                    </p>
+                                )}
+
+                                {matches && matches.length > 1 && (
+                                    <div className="space-y-1 mb-3 max-h-40 overflow-y-auto">
+                                        <p className="text-xs font-bold text-slate-500 mb-1">같은 날짜에 {matches.length}건의 업로드가 있습니다:</p>
+                                        {matches.map(h => (
+                                            <button
+                                                key={h.id}
+                                                onClick={() => { onSelect(h.id); setOpen(false); }}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${h.id === selectedId ? `text-white ${t.activeBg} border-transparent` : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                                            >
+                                                {fmtTime(h.createdAt)} · {h.version || '버전 정보 없음'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {!isLatest && (
+                                    <button onClick={resetToLatest} className="w-full text-center text-xs font-bold text-slate-500 hover:text-slate-800 underline pt-2 border-t border-slate-100">
+                                        최신 데이터로 돌아가기
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        };
 
         const App = () => {
             const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -564,15 +796,27 @@
                             const header1 = rawStock[0] || [];
                             const h1NameIdx = findIdxPriority(header1, ['자사 상품명', '상품명'], 4);
                             const h1StockIdx = findIdxPriority(header1, ['가용재고', '현재고', '총재고'], 5); 
+                            const h1ActualStockIdx = findIdxPriority(header1, ['현재고'], -1);
                             const h1SafeStockIdx = findIdxPriority(header1, ['안전재고'], 9); 
                             rawStock.forEach((row, idx) => {
                                 if (idx === 0 || !row) return; 
                                 const itemName = String(row[h1NameIdx] || '').trim(); 
                                 const stockStr = String(row[h1StockIdx] || "0").replace(/,/g, '');
-                                const stock = parseFloat(stockStr) || 0; 
+                                let stock = parseFloat(stockStr) || 0; 
                                 const safeStockStr = String(row[h1SafeStockIdx] || "0").replace(/,/g, '');
                                 const safeStock = parseFloat(safeStockStr) || 0;
                                 if (!itemName || itemName === '상품명' || itemName === '자사 상품명') return;
+
+                                // v59: 위킵 이관 중인 품목 예외 처리 — 가용재고가 0인데 현재고가 마이너스면(이관 처리 지연분)
+                                // 총재고 표시값을 가용재고(0) 대신 실제 현재고(마이너스)로 사용
+                                let actualStock = null;
+                                if (h1ActualStockIdx !== -1) {
+                                    const actualStockStr = String(row[h1ActualStockIdx] || "0").replace(/,/g, '');
+                                    actualStock = parseFloat(actualStockStr) || 0;
+                                }
+                                if (stock === 0 && actualStock !== null && actualStock < 0) {
+                                    stock = actualStock;
+                                }
                                 
                                 const existing = parsedItemsMap.get(itemName) || {};
                                 parsedItemsMap.set(itemName, { ...existing, itemName, stock, safeStock });
@@ -727,7 +971,7 @@
                     
                     const daily = outbound / periodToUse;
                     let availableDays = null;
-                    if (daily > 0) availableDays = Math.floor(item.stock / daily);
+                    if (daily > 0) availableDays = Math.max(0, Math.floor(item.stock / daily));
 
                     let mainGroup = null; let displayName = item.itemName; 
                     const match = item.itemName.match(/^(\d+)/);
@@ -785,7 +1029,7 @@
 
                     const daily = outbound / periodToUse;
                     let availableDays = null;
-                    if (daily > 0) availableDays = Math.floor((item.stock || 0) / daily);
+                    if (daily > 0) availableDays = Math.max(0, Math.floor((item.stock || 0) / daily));
 
                     return { ...item, _outboundQty: totalOutboundQty, _outboundToDisplay: outbound, _dailyToDisplay: daily, _availableDays: availableDays };
                 });
@@ -840,7 +1084,7 @@
                     const totalStock = i.clStock + i.wkStock;
                     let availableDays = null;
                     if (i._dailyToDisplay > 0) {
-                        availableDays = Math.floor(totalStock / i._dailyToDisplay);
+                        availableDays = Math.max(0, Math.floor(totalStock / i._dailyToDisplay));
                     }
                     return { ...i, total: totalStock, _combinedAvailableDays: availableDays };
                 });
@@ -976,7 +1220,7 @@
                                 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 cursor-pointer hover:opacity-70 transition-opacity"
                                 title="새로고침"
                             >
-                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v58)</span>
+                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v64)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
@@ -1069,8 +1313,8 @@
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
-                                        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                                    <div className="flex justify-end pt-3 border-t border-slate-100">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             {viewMode === 'period' ? (
                                                 <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                                                     <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
@@ -1083,9 +1327,9 @@
                                             ) : (
                                                 <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-xl border border-indigo-200">
                                                     <span className="text-sm font-bold text-indigo-800 pl-2">출고일 구간:</span>
-                                                    <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-indigo-500"/>
+                                                    <MiniDatePicker value={customStartDate} onChange={setCustomStartDate} max={customEndDate || undefined} theme="indigo" />
                                                     <span className="text-indigo-400 font-bold">~</span>
-                                                    <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-indigo-500"/>
+                                                    <MiniDatePicker value={customEndDate} onChange={setCustomEndDate} min={customStartDate || undefined} theme="indigo" />
                                                 </div>
                                             )}
 
@@ -1101,6 +1345,14 @@
                                                     className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-indigo-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm placeholder:text-slate-400"
                                                 />
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-bold text-slate-400 mr-1">🕐 과거 시점 재고 조회:</span>
+                                            <HistoryDatePicker histories={histories} selectedId={selectedHistoryId} onSelect={setSelectedHistoryId} theme="indigo" label="CL" />
+                                            <HistoryDatePicker histories={wkHistories} selectedId={wkSelectedHistoryId} onSelect={setWkSelectedHistoryId} theme="orange" label="위킵" />
                                         </div>
 
                                         <div className="flex flex-wrap items-center justify-end gap-2 w-full xl:w-auto">
@@ -1225,8 +1477,9 @@
                                     <button onClick={() => setViewMode('custom')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition-colors ${viewMode === 'custom' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>일자 직접 지정</button>
                                 </div>
                             </div>
-                            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
-                                <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+
+                            <div className="flex justify-end pt-3 border-t border-slate-100">
+                                <div className="flex flex-wrap items-center gap-3">
                                     {viewMode === 'period' ? (
                                         <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                                             <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
@@ -1239,9 +1492,9 @@
                                     ) : (
                                         <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-xl border border-indigo-200">
                                             <span className="text-sm font-bold text-indigo-800 pl-2">출고일 구간:</span>
-                                            <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-indigo-500"/>
+                                            <MiniDatePicker value={customStartDate} onChange={setCustomStartDate} max={customEndDate || undefined} theme="indigo" />
                                             <span className="text-indigo-400 font-bold">~</span>
-                                            <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-indigo-500"/>
+                                            <MiniDatePicker value={customEndDate} onChange={setCustomEndDate} min={customStartDate || undefined} theme="indigo" />
                                         </div>
                                     )}
                                     <div className="relative flex items-center w-full sm:w-auto flex-grow max-w-xs">
@@ -1253,6 +1506,13 @@
                                             className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-indigo-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm placeholder:text-slate-400"
                                         />
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-bold text-slate-400 mr-1">🕐 과거 시점 재고 조회:</span>
+                                    <HistoryDatePicker histories={histories} selectedId={selectedHistoryId} onSelect={setSelectedHistoryId} theme="indigo" label="CL" />
                                 </div>
                                 <div className="flex flex-wrap items-center justify-end gap-2 w-full xl:w-auto">
                                     <button onClick={() => setShowWarningOnly(!showWarningOnly)} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
@@ -1335,8 +1595,9 @@
                                             <button onClick={() => setWkViewMode('custom')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition-colors ${wkViewMode === 'custom' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>일자 직접 지정</button>
                                         </div>
                                     </div>
-                                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
-                                        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+
+                                    <div className="flex justify-end pt-3 border-t border-slate-100">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             {wkViewMode === 'period' ? (
                                                 <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                                                     <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
@@ -1349,9 +1610,9 @@
                                             ) : (
                                                 <div className="flex items-center gap-2 bg-orange-50 p-1.5 rounded-xl border border-orange-200">
                                                     <span className="text-sm font-bold text-orange-800 pl-2">출고일 구간:</span>
-                                                    <input type="date" value={wkCustomStartDate} onChange={(e) => setWkCustomStartDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-orange-500"/>
+                                                    <MiniDatePicker value={wkCustomStartDate} onChange={setWkCustomStartDate} max={wkCustomEndDate || undefined} theme="orange" />
                                                     <span className="text-orange-400 font-bold">~</span>
-                                                    <input type="date" value={wkCustomEndDate} onChange={(e) => setWkCustomEndDate(e.target.value)} className="px-2 py-1.5 text-sm font-bold text-slate-700 rounded-lg border border-slate-300 focus:outline-none focus:border-orange-500"/>
+                                                    <MiniDatePicker value={wkCustomEndDate} onChange={setWkCustomEndDate} min={wkCustomStartDate || undefined} theme="orange" />
                                                 </div>
                                             )}
                                             <div className="relative flex items-center w-full sm:w-auto flex-grow max-w-xs">
@@ -1363,6 +1624,13 @@
                                                     className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-orange-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition-all shadow-sm placeholder:text-slate-400"
                                                 />
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pt-3 border-t border-slate-100">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-bold text-slate-400 mr-1">🕐 과거 시점 재고 조회:</span>
+                                            <HistoryDatePicker histories={wkHistories} selectedId={wkSelectedHistoryId} onSelect={setWkSelectedHistoryId} theme="orange" label="위킵" />
                                         </div>
                                         <div className="flex flex-wrap items-center justify-end gap-2 w-full xl:w-auto">
                                             <button onClick={() => setWkShowWarningOnly(!wkShowWarningOnly)} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${wkShowWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
