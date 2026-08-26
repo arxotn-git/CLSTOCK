@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v64)</title>
+    <title>요미몬 재고 관리 (v68)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -57,7 +57,8 @@
 
         // v60: 시점 재고 조회용 날짜 선택 컴포넌트 — 특정 날짜의 과거 업로드 스냅샷을 선택
         // v64: 네이티브 date input을 대체하는 커스텀 달력 컴포넌트 — 클릭 몇 번으로 월/일 선택 가능
-        const MiniDatePicker = ({ value, onChange, min, max, markedDates, theme }) => {
+        // v65: inline prop 추가 — true면 버튼 없이 달력 패널을 바로 펼쳐서 보여줌 (시점재고처럼 이미 팝업 안에 있는 경우)
+        const MiniDatePicker = ({ value, onChange, min, max, markedDates, theme, inline }) => {
             const [open, setOpen] = useState(false);
 
             const themeMap = {
@@ -74,7 +75,7 @@
             const todayStr = fmtYMD(new Date());
             const [viewDate, setViewDate] = useState(selectedDate || new Date());
 
-            useEffect(() => { if (open) setViewDate(selectedDate || new Date()); }, [open]);
+            useEffect(() => { if (inline || open) setViewDate(selectedDate || new Date()); }, [open]);
 
             const year = viewDate.getFullYear();
             const month = viewDate.getMonth();
@@ -103,6 +104,49 @@
 
             const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 
+            const calendarPanel = (
+                <div className={inline ? "bg-white w-64" : "absolute z-50 top-full mt-2 left-0 bg-white border border-slate-200 rounded-xl shadow-lg p-3 w-64"}>
+                    <div className="flex items-center justify-between mb-2">
+                        <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))} className={`w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 font-bold transition-colors ${t.navHover}`}>‹</button>
+                        <span className="text-sm font-bold text-slate-700">{year}년 {month + 1}월</span>
+                        <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))} className={`w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 font-bold transition-colors ${t.navHover}`}>›</button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 mb-1">
+                        {weekdays.map(w => <div key={w} className="text-center text-[11px] font-bold text-slate-400 py-1">{w}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                        {cells.map((d, idx) => {
+                            if (d === null) return <div key={idx}></div>;
+                            const dStr = fmtYMD(new Date(year, month, d));
+                            const disabled = isDisabled(d);
+                            const isSelected = value === dStr;
+                            const isToday = todayStr === dStr;
+                            const hasMark = markedDates && markedDates.has(dStr);
+                            return (
+                                <button
+                                    type="button"
+                                    key={idx}
+                                    disabled={disabled}
+                                    onClick={() => handlePick(d)}
+                                    className={`relative w-8 h-8 text-xs font-bold rounded-lg transition-colors flex items-center justify-center
+                                        ${disabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer ' + t.hoverBg}
+                                        ${isSelected ? `${t.selectedBg} text-white hover:opacity-90` : ''}
+                                        ${isToday && !isSelected ? `ring-1 ${t.todayRing}` : ''}
+                                    `}
+                                >
+                                    {d}
+                                    {hasMark && !isSelected && <span className={`absolute bottom-0.5 w-1 h-1 rounded-full ${t.dot}`}></span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+
+            if (inline) {
+                return calendarPanel;
+            }
+
             return (
                 <div className="relative inline-block">
                     <button
@@ -117,42 +161,7 @@
                     {open && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>
-                            <div className="absolute z-50 top-full mt-2 left-0 bg-white border border-slate-200 rounded-xl shadow-lg p-3 w-64">
-                                <div className="flex items-center justify-between mb-2">
-                                    <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))} className={`w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 font-bold transition-colors ${t.navHover}`}>‹</button>
-                                    <span className="text-sm font-bold text-slate-700">{year}년 {month + 1}월</span>
-                                    <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))} className={`w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 font-bold transition-colors ${t.navHover}`}>›</button>
-                                </div>
-                                <div className="grid grid-cols-7 gap-1 mb-1">
-                                    {weekdays.map(w => <div key={w} className="text-center text-[11px] font-bold text-slate-400 py-1">{w}</div>)}
-                                </div>
-                                <div className="grid grid-cols-7 gap-1">
-                                    {cells.map((d, idx) => {
-                                        if (d === null) return <div key={idx}></div>;
-                                        const dStr = fmtYMD(new Date(year, month, d));
-                                        const disabled = isDisabled(d);
-                                        const isSelected = value === dStr;
-                                        const isToday = todayStr === dStr;
-                                        const hasMark = markedDates && markedDates.has(dStr);
-                                        return (
-                                            <button
-                                                type="button"
-                                                key={idx}
-                                                disabled={disabled}
-                                                onClick={() => handlePick(d)}
-                                                className={`relative w-8 h-8 text-xs font-bold rounded-lg transition-colors flex items-center justify-center
-                                                    ${disabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer ' + t.hoverBg}
-                                                    ${isSelected ? `${t.selectedBg} text-white hover:opacity-90` : ''}
-                                                    ${isToday && !isSelected ? `ring-1 ${t.todayRing}` : ''}
-                                                `}
-                                            >
-                                                {d}
-                                                {hasMark && !isSelected && <span className={`absolute bottom-0.5 w-1 h-1 rounded-full ${t.dot}`}></span>}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                            {calendarPanel}
                         </>
                     )}
                 </div>
@@ -251,7 +260,7 @@
                             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>
                             <div className="absolute z-50 top-full mt-2 right-0 bg-white border border-slate-200 rounded-xl shadow-lg p-4 w-72">
                                 <p className="text-xs font-bold text-slate-500 mb-2">{label ? `${label} ` : ''}조회할 날짜 선택</p>
-                                <MiniDatePicker value={pickedDate} onChange={handleDateChange} theme={theme} markedDates={new Set(availableDates)} />
+                                <MiniDatePicker value={pickedDate} onChange={handleDateChange} theme={theme} markedDates={new Set(availableDates)} inline={true} />
                                 <p className="text-[11px] text-slate-400 mt-2 mb-3">업로드 이력이 있는 날짜: {minDate && maxDate ? `${minDate} ~ ${maxDate}` : '없음'} ({availableDates.length}일) · 점이 찍힌 날짜가 업로드 이력이 있는 날짜입니다.</p>
 
                                 {fallbackNotice && (
@@ -325,6 +334,49 @@
             const [wkCustomStartDate, setWkCustomStartDate] = useState("");
             const [wkCustomEndDate, setWkCustomEndDate] = useState("");
             const [wkShowWarningOnly, setWkShowWarningOnly] = useState(false);
+
+            // v66: 60일 이내 품절 필터 (30일 필터와 상호 배타적) + 헤더 클릭 정렬 상태
+            const [show60WarningOnly, setShow60WarningOnly] = useState(false);
+            const [wkShow60WarningOnly, setWkShow60WarningOnly] = useState(false);
+
+            // v67: "60일 이내 품절" 버튼은 분석기준일이 정확히 "30일"일 때만 노출 (다른 기간에서는 일평균 계산 기준이 달라져 혼동을 주므로 숨김)
+            useEffect(() => {
+                if (!(viewMode === 'period' && selectedPeriod === 30)) setShow60WarningOnly(false);
+            }, [viewMode, selectedPeriod]);
+            useEffect(() => {
+                if (!(wkViewMode === 'period' && wkSelectedPeriod === 30)) setWkShow60WarningOnly(false);
+            }, [wkViewMode, wkSelectedPeriod]);
+            const [clSortKey, setClSortKey] = useState(null);
+            const [clSortDir, setClSortDir] = useState('asc');
+            const [wkSortKey, setWkSortKey] = useState(null);
+            const [wkSortDir, setWkSortDir] = useState('asc');
+            const [totalSortKey, setTotalSortKey] = useState(null);
+            const [totalSortDir, setTotalSortDir] = useState('asc');
+
+            // 정렬 헤더 공용 헬퍼: 값이 문자열이면 가나다순, 숫자면 크기순. null/undefined는 항상 맨 뒤로.
+            const applySort = (items, key, dir) => {
+                if (!key) return items;
+                return [...items].sort((a, b) => {
+                    const av = a[key], bv = b[key];
+                    const aNull = (av === null || av === undefined);
+                    const bNull = (bv === null || bv === undefined);
+                    if (aNull && bNull) return 0;
+                    if (aNull) return 1;
+                    if (bNull) return -1;
+                    if (typeof av === 'string') {
+                        return dir === 'asc' ? av.localeCompare(bv, 'ko', { numeric: true }) : bv.localeCompare(av, 'ko', { numeric: true });
+                    }
+                    return dir === 'asc' ? av - bv : bv - av;
+                });
+            };
+            const makeSortClick = (key, curKey, curDir, setKey, setDir) => () => {
+                if (curKey !== key) { setKey(key); setDir('asc'); }
+                else if (curDir === 'asc') { setDir('desc'); }
+                else { setKey(null); setDir('asc'); }
+            };
+            const SortArrow = ({ active, dir }) => (
+                <span className={`ml-1 inline-block text-[10px] ${active ? 'text-current' : 'text-slate-300'}`}>{active ? (dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+            );
 
             useEffect(() => {
                 const handleOnline = () => setServerStatus("connected");
@@ -938,7 +990,11 @@
                 }
             }, [currentData, selectedPeriod, viewMode, customStartDate, customEndDate]);
 
-            const processedItems = useMemo(() => {
+            // v68: 버그 수정 — 기존에는 이 배열 자체가 30일/60일 품절 필터로 걸러진 뒤 총재고 탭의 데이터 소스로도 재사용되고 있었음.
+            // 그 결과 총재고 탭에서 필터를 켜면 "CL재고=0(위킵으로 이관 완료)"인 품목이 이 단계에서 이미 걸러져 사라지고,
+            // 총재고 탭이 그 위에 다시 (합산 기준) 필터를 적용하면서 이중 필터링되어 대부분의 품목이 통째로 빠지는 문제가 있었음.
+            // → 계산만 하는 processedItemsBase(필터 없음)와, CL 탭 전용 표시용 processedItems(검색+품절 필터 적용)를 분리.
+            const processedItemsBase = useMemo(() => {
                 if (!currentData) return [];
                 let sTime = 0, eTime = 0;
                 if (viewMode === 'custom' && customStartDate && customEndDate) {
@@ -953,8 +1009,23 @@
                 return currentData.items.map(item => {
                     let outbound = 0; let periodToUse = 30;
                     if (viewMode === 'period') {
-                        outbound = item[`out_${selectedPeriod}`] || 0;
                         periodToUse = selectedPeriod;
+                        if (currentData.baseDate && item.daily) {
+                            const baseD = new Date(currentData.baseDate);
+                            const startT = new Date(baseD.getFullYear(), baseD.getMonth(), baseD.getDate() - (selectedPeriod - 1), 0, 0, 0, 0).getTime();
+                            const endT = new Date(baseD.getFullYear(), baseD.getMonth(), baseD.getDate(), 23, 59, 59, 999).getTime();
+                            let sum = 0;
+                            Object.entries(item.daily).forEach(([dStr, amt]) => {
+                                if (!dStr.includes('-')) return;
+                                const [y, m, d] = dStr.split('-');
+                                const dt = new Date(y, m - 1, d, 12, 0, 0).getTime();
+                                if (dt >= startT && dt <= endT) sum += amt;
+                            });
+                            outbound = sum;
+                        } else {
+                            // v66: item.daily가 없는 레거시 데이터는 사전 계산된 out_30/15/7 필드로 폴백 (60일 등 신규 구간은 daily 기반으로만 계산됨)
+                            outbound = item[`out_${selectedPeriod}`] || 0;
+                        }
                     } else if (viewMode === 'custom') {
                         if (sTime > 0 && eTime > 0 && item.daily) {
                             let sum = 0;
@@ -981,13 +1052,20 @@
                         ...item, safeStock: item.safeStock || 0, _outboundToDisplay: outbound, _dailyToDisplay: daily,
                         _availableDays: availableDays, _periodToUse: periodToUse, _mainGroup: mainGroup, _displayName: displayName
                     };
-                }).filter(item => {
-                    if (!item._mainGroup) return false;
+                }).filter(item => !!item._mainGroup);
+            }, [currentData, selectedPeriod, viewMode, customStartDate, customEndDate]);
+
+            // CL 탭 전용 표시 목록: base에 검색어 + 30일/60일 품절 필터를 적용 (총재고 탭 데이터 소스로는 절대 재사용하지 않음)
+            const processedItems = useMemo(() => {
+                return processedItemsBase.filter(item => {
                     if (searchKeyword && !item._displayName.toLowerCase().includes(searchKeyword.toLowerCase())) return false;
                     if (showWarningOnly) return item._availableDays !== null && item._availableDays < 30 && item.stock > 0;
+                    if (show60WarningOnly) return item._availableDays !== null && item._availableDays < 60 && item.stock > 0;
                     return true;
                 });
-            }, [currentData, showWarningOnly, selectedPeriod, viewMode, customStartDate, customEndDate, searchKeyword]);
+            }, [processedItemsBase, showWarningOnly, show60WarningOnly, searchKeyword]);
+
+            const sortedProcessedItems = useMemo(() => applySort(processedItems, clSortKey, clSortDir), [processedItems, clSortKey, clSortDir]);
 
             const wkProcessedItems = useMemo(() => {
                 if (!wkCurrentData) return [];
@@ -1036,15 +1114,20 @@
 
                 if (wkSearchKeyword) items = items.filter(i => i.itemName.toLowerCase().includes(wkSearchKeyword.toLowerCase()));
                 if (wkShowWarningOnly) items = items.filter(i => i._availableDays !== null && i._availableDays < 30 && (i.stock || 0) > 0);
-                items.sort((a, b) => a.itemName.localeCompare(b.itemName, 'ko', { numeric: true }));
+                if (wkShow60WarningOnly) items = items.filter(i => i._availableDays !== null && i._availableDays < 60 && (i.stock || 0) > 0);
+                if (wkSortKey) {
+                    items = applySort(items, wkSortKey, wkSortDir);
+                } else {
+                    items.sort((a, b) => a.itemName.localeCompare(b.itemName, 'ko', { numeric: true }));
+                }
                 return items;
-            }, [wkCurrentData, wkSearchKeyword, wkDailyOutboundMap, wkViewMode, wkSelectedPeriod, wkCustomStartDate, wkCustomEndDate, wkShowWarningOnly]);
+            }, [wkCurrentData, wkSearchKeyword, wkDailyOutboundMap, wkViewMode, wkSelectedPeriod, wkCustomStartDate, wkCustomEndDate, wkShowWarningOnly, wkShow60WarningOnly, wkSortKey, wkSortDir]);
 
             // v54: CL + 위킵 데이터 통합 계산 엔진 (총재고 탭 리스트용)
             const combinedItems = useMemo(() => {
                 const map = new Map();
-                if (processedItems) {
-                    processedItems.forEach(item => {
+                if (processedItemsBase) {
+                    processedItemsBase.forEach(item => {
                         if (!item.itemName || !item.itemName.match(/^(\d+)/)) return;
                         map.set(item.itemName, {
                             ...item,
@@ -1091,10 +1174,15 @@
 
                 if (totalSearchKeyword) items = items.filter(i => i._displayName.toLowerCase().includes(totalSearchKeyword.toLowerCase()));
                 if (showWarningOnly) items = items.filter(i => i._combinedAvailableDays !== null && i._combinedAvailableDays < 30 && i.total > 0);
+                if (show60WarningOnly) items = items.filter(i => i._combinedAvailableDays !== null && i._combinedAvailableDays < 60 && i.total > 0);
 
-                items.sort((a, b) => a.itemName.localeCompare(b.itemName, 'ko', { numeric: true }));
+                if (totalSortKey) {
+                    items = applySort(items, totalSortKey, totalSortDir);
+                } else {
+                    items.sort((a, b) => a.itemName.localeCompare(b.itemName, 'ko', { numeric: true }));
+                }
                 return items;
-            }, [processedItems, wkCurrentData, totalSearchKeyword, showWarningOnly]);
+            }, [processedItemsBase, wkCurrentData, totalSearchKeyword, showWarningOnly, show60WarningOnly, totalSortKey, totalSortDir]);
 
             const combinedSummary = useMemo(() => {
                 const all = combinedItems;
@@ -1319,6 +1407,7 @@
                                                 <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                                                     <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
                                                     <div className="flex gap-1">
+                                                        <button onClick={() => setSelectedPeriod(60)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 60 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>60일</button>
                                                         <button onClick={() => setSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 30 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
                                                         <button onClick={() => setSelectedPeriod(15)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 15 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>15일</button>
                                                         <button onClick={() => setSelectedPeriod(7)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 7 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>7일</button>
@@ -1363,11 +1452,19 @@
                                                 {showDetailedStock ? '👀 상세 숨기기' : '👀 CL/위킵 보기'}
                                             </button>
                                             <button 
-                                                onClick={() => setShowWarningOnly(!showWarningOnly)}
+                                                onClick={() => { setShowWarningOnly(!showWarningOnly); if (!showWarningOnly) setShow60WarningOnly(false); }}
                                                 className={`px-3 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
                                             >
                                                 {showWarningOnly ? '전체 보기' : '🚨 30일 이내 품절'}
                                             </button>
+                                            {viewMode === 'period' && selectedPeriod === 30 && (
+                                                <button 
+                                                    onClick={() => { setShow60WarningOnly(!show60WarningOnly); if (!show60WarningOnly) setShowWarningOnly(false); }}
+                                                    className={`px-3 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${show60WarningOnly ? 'bg-amber-50 text-amber-600 border-amber-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                                                >
+                                                    {show60WarningOnly ? '전체 보기' : '⏳ 60일 이내 품절'}
+                                                </button>
+                                            )}
                                             <button onClick={exportToExcel} className="px-4 py-2.5 rounded-lg text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm flex items-center gap-2">
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                                 엑셀 다운로드
@@ -1382,14 +1479,14 @@
                                         <table className="w-full min-w-[1000px] text-sm text-slate-600 table-fixed border-collapse">
                                             <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                                 <tr>
-                                                    <th scope="col" className={`${showDetailedStock ? 'w-[20%]' : 'w-[28%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left transition-all duration-300`}>상품명</th>
-                                                    <th scope="col" className={`${showDetailedStock ? 'w-[8%]' : 'w-[10%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-900 text-center bg-slate-200/50 transition-all duration-300`}>합계(총재고)</th>
-                                                    {showDetailedStock && <th scope="col" className="w-[8%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-indigo-700 text-center bg-indigo-50/50 transition-all duration-300">CL 재고</th>}
-                                                    {showDetailedStock && <th scope="col" className="w-[8%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-orange-600 text-center bg-orange-50/50 transition-all duration-300">위킵 재고</th>}
-                                                    <th scope="col" className={`${showDetailedStock ? 'w-[8%]' : 'w-[10%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300`}>안전재고</th>
-                                                    <th scope="col" className={`${showDetailedStock ? 'w-[12%]' : 'w-[16%]'} px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight transition-all duration-300`}>{viewMode === 'period' ? `출고수량(${selectedPeriod}일)` : '지정일 출고수량'}</th>
-                                                    <th scope="col" className={`${showDetailedStock ? 'w-[10%]' : 'w-[12%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300`}>일평균</th>
-                                                    <th scope="col" className={`${showDetailedStock ? 'w-[14%]' : 'w-[16%]'} px-4 py-4 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-center transition-all duration-300`}>예상 소진일</th>
+                                                    <th scope="col" onClick={makeSortClick('itemName', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[20%]' : 'w-[28%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>상품명<SortArrow active={totalSortKey === 'itemName'} dir={totalSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('total', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[8%]' : 'w-[10%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-900 text-center bg-slate-200/50 transition-all duration-300 cursor-pointer select-none hover:bg-slate-300/40`}>합계(총재고)<SortArrow active={totalSortKey === 'total'} dir={totalSortDir} /></th>
+                                                    {showDetailedStock && <th scope="col" onClick={makeSortClick('clStock', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className="w-[8%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-indigo-700 text-center bg-indigo-50/50 transition-all duration-300 cursor-pointer select-none hover:bg-indigo-100">CL 재고<SortArrow active={totalSortKey === 'clStock'} dir={totalSortDir} /></th>}
+                                                    {showDetailedStock && <th scope="col" onClick={makeSortClick('wkStock', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className="w-[8%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-orange-600 text-center bg-orange-50/50 transition-all duration-300 cursor-pointer select-none hover:bg-orange-100">위킵 재고<SortArrow active={totalSortKey === 'wkStock'} dir={totalSortDir} /></th>}
+                                                    <th scope="col" onClick={makeSortClick('safeStock', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[8%]' : 'w-[10%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>안전재고<SortArrow active={totalSortKey === 'safeStock'} dir={totalSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('_outboundToDisplay', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[12%]' : 'w-[16%]'} px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>{viewMode === 'period' ? `출고수량(${selectedPeriod}일)` : '지정일 출고수량'}<SortArrow active={totalSortKey === '_outboundToDisplay'} dir={totalSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('_dailyToDisplay', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[10%]' : 'w-[12%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>일평균<SortArrow active={totalSortKey === '_dailyToDisplay'} dir={totalSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('_combinedAvailableDays', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[14%]' : 'w-[16%]'} px-4 py-4 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-center transition-all duration-300 cursor-pointer select-none hover:bg-indigo-100`}>예상 소진일<SortArrow active={totalSortKey === '_combinedAvailableDays'} dir={totalSortDir} /></th>
                                                     <th scope="col" className={`${showDetailedStock ? 'w-[12%]' : 'w-[8%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300`}>상태</th>
                                                 </tr>
                                             </thead>
@@ -1484,7 +1581,8 @@
                                         <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                                             <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
                                             <div className="flex gap-1">
-                                                <button onClick={() => setSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 30 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
+                                                <button onClick={() => setSelectedPeriod(60)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 60 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>60일</button>
+                                                        <button onClick={() => setSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 30 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
                                                 <button onClick={() => setSelectedPeriod(15)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 15 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>15일</button>
                                                 <button onClick={() => setSelectedPeriod(7)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${selectedPeriod === 7 ? 'bg-white shadow-sm text-indigo-700 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>7일</button>
                                             </div>
@@ -1515,9 +1613,14 @@
                                     <HistoryDatePicker histories={histories} selectedId={selectedHistoryId} onSelect={setSelectedHistoryId} theme="indigo" label="CL" />
                                 </div>
                                 <div className="flex flex-wrap items-center justify-end gap-2 w-full xl:w-auto">
-                                    <button onClick={() => setShowWarningOnly(!showWarningOnly)} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+                                    <button onClick={() => { setShowWarningOnly(!showWarningOnly); if (!showWarningOnly) setShow60WarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                                         {showWarningOnly ? '전체 보기' : '🚨 30일 이내 품절'}
                                     </button>
+                                    {viewMode === 'period' && selectedPeriod === 30 && (
+                                        <button onClick={() => { setShow60WarningOnly(!show60WarningOnly); if (!show60WarningOnly) setShowWarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${show60WarningOnly ? 'bg-amber-50 text-amber-600 border-amber-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+                                            {show60WarningOnly ? '전체 보기' : '⏳ 60일 이내 품절'}
+                                        </button>
+                                    )}
                                     <button onClick={exportToExcel} className="px-4 py-2.5 rounded-lg text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm flex items-center gap-2">
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                         엑셀 다운로드
@@ -1532,14 +1635,14 @@
                                 <table className="w-full min-w-[850px] text-sm text-slate-600 table-fixed border-collapse">
                                     <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                         <tr>
-                                            <th scope="col" className="w-[28%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left transition-all">상품명</th>
-                                            <th scope="col" className="w-[10%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all">총재고</th>
-                                            <th scope="col" className="w-[10%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-slate-200/50 transition-all">안전재고</th>
-                                            <th scope="col" className="w-[16%] px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight transition-all">{viewMode === 'period' ? `출고수량(${selectedPeriod}일)` : '지정일 출고수량'}</th>
+                                            <th scope="col" onClick={makeSortClick('_displayName', clSortKey, clSortDir, setClSortKey, setClSortDir)} className="w-[28%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left transition-all cursor-pointer select-none hover:bg-slate-100">상품명<SortArrow active={clSortKey === '_displayName'} dir={clSortDir} /></th>
+                                            <th scope="col" onClick={makeSortClick('stock', clSortKey, clSortDir, setClSortKey, setClSortDir)} className="w-[10%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all cursor-pointer select-none hover:bg-slate-100">총재고<SortArrow active={clSortKey === 'stock'} dir={clSortDir} /></th>
+                                            <th scope="col" onClick={makeSortClick('safeStock', clSortKey, clSortDir, setClSortKey, setClSortDir)} className="w-[10%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-slate-200/50 transition-all cursor-pointer select-none hover:bg-slate-300/40">안전재고<SortArrow active={clSortKey === 'safeStock'} dir={clSortDir} /></th>
+                                            <th scope="col" onClick={makeSortClick('_outboundToDisplay', clSortKey, clSortDir, setClSortKey, setClSortDir)} className="w-[16%] px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight transition-all cursor-pointer select-none hover:bg-slate-100">{viewMode === 'period' ? `출고수량(${selectedPeriod}일)` : '지정일 출고수량'}<SortArrow active={clSortKey === '_outboundToDisplay'} dir={clSortDir} /></th>
                                             {viewMode === 'period' ? (
                                                 <>
-                                                    <th scope="col" className="w-[14%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all">일평균</th>
-                                                    <th scope="col" className="w-[22%] px-4 py-4 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-center transition-all">예상 소진일</th>
+                                                    <th scope="col" onClick={makeSortClick('_dailyToDisplay', clSortKey, clSortDir, setClSortKey, setClSortDir)} className="w-[14%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all cursor-pointer select-none hover:bg-slate-100">일평균<SortArrow active={clSortKey === '_dailyToDisplay'} dir={clSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('_availableDays', clSortKey, clSortDir, setClSortKey, setClSortDir)} className="w-[22%] px-4 py-4 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-center transition-all cursor-pointer select-none hover:bg-indigo-100">예상 소진일<SortArrow active={clSortKey === '_availableDays'} dir={clSortDir} /></th>
                                                 </>
                                             ) : (
                                                 <th scope="col" className="w-[36%] px-4 py-4 border-b-2 border-slate-300 bg-slate-50 transition-all"></th>
@@ -1548,10 +1651,10 @@
                                     </thead>
                                     <tbody>
                                         {currentData ? (
-                                            processedItems.length > 0 ? (
-                                                processedItems.map((item, idx) => {
+                                            sortedProcessedItems.length > 0 ? (
+                                                sortedProcessedItems.map((item, idx) => {
                                                     const isWarning = item._availableDays !== null && item._availableDays < 30;
-                                                    const isGroupChanged = idx > 0 && processedItems[idx - 1]._mainGroup !== item._mainGroup;
+                                                    const isGroupChanged = idx > 0 && sortedProcessedItems[idx - 1]._mainGroup !== item._mainGroup;
                                                     const borderClass = isGroupChanged ? 'border-t-2 border-t-slate-400' : 'border-t border-slate-100';
                                                     return (
                                                         <tr key={idx} className={`transition-colors ${borderClass} ${isWarning ? 'bg-red-50 hover:bg-red-100' : 'bg-white hover:bg-slate-50'}`}>
@@ -1602,6 +1705,7 @@
                                                 <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                                                     <span className="text-sm font-bold text-slate-700 pl-2">분석 기준일:</span>
                                                     <div className="flex gap-1">
+                                                        <button onClick={() => setWkSelectedPeriod(60)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${wkSelectedPeriod === 60 ? 'bg-white shadow-sm text-orange-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>60일</button>
                                                         <button onClick={() => setWkSelectedPeriod(30)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${wkSelectedPeriod === 30 ? 'bg-white shadow-sm text-orange-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>30일</button>
                                                         <button onClick={() => setWkSelectedPeriod(15)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${wkSelectedPeriod === 15 ? 'bg-white shadow-sm text-orange-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>15일</button>
                                                         <button onClick={() => setWkSelectedPeriod(7)} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${wkSelectedPeriod === 7 ? 'bg-white shadow-sm text-orange-600 border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>7일</button>
@@ -1633,9 +1737,14 @@
                                             <HistoryDatePicker histories={wkHistories} selectedId={wkSelectedHistoryId} onSelect={setWkSelectedHistoryId} theme="orange" label="위킵" />
                                         </div>
                                         <div className="flex flex-wrap items-center justify-end gap-2 w-full xl:w-auto">
-                                            <button onClick={() => setWkShowWarningOnly(!wkShowWarningOnly)} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${wkShowWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+                                            <button onClick={() => { setWkShowWarningOnly(!wkShowWarningOnly); if (!wkShowWarningOnly) setWkShow60WarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${wkShowWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                                                 {wkShowWarningOnly ? '전체 보기' : '🚨 30일 이내 품절'}
                                             </button>
+                                            {wkViewMode === 'period' && wkSelectedPeriod === 30 && (
+                                                <button onClick={() => { setWkShow60WarningOnly(!wkShow60WarningOnly); if (!wkShow60WarningOnly) setWkShowWarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${wkShow60WarningOnly ? 'bg-amber-50 text-amber-600 border-amber-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+                                                    {wkShow60WarningOnly ? '전체 보기' : '⏳ 60일 이내 품절'}
+                                                </button>
+                                            )}
                                             <button onClick={exportToExcel} className="px-4 py-2.5 rounded-lg text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm flex items-center gap-2">
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                                 엑셀 다운로드
@@ -1650,14 +1759,14 @@
                                         <table className="w-full min-w-[950px] text-sm text-slate-600 table-fixed border-collapse">
                                             <thead className="bg-slate-50 sticky top-0 z-40 shadow-sm ring-1 ring-slate-200">
                                                 <tr>
-                                                    <th scope="col" className="w-[20%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left">상품명</th>
-                                                    <th scope="col" className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">가용재고</th>
-                                                    <th scope="col" className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-slate-200/50">안전재고</th>
-                                                    <th scope="col" className="w-[13%] px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight">{wkViewMode === 'period' ? `출고수량(${wkSelectedPeriod}일)` : '지정일 출고수량'}</th>
-                                                    <th scope="col" className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">일평균</th>
-                                                    <th scope="col" className="w-[16%] px-4 py-4 text-[15px] font-extrabold text-orange-900 bg-orange-100/50 border-b-2 border-orange-200 text-center">예상 소진일</th>
-                                                    <th scope="col" className="w-[12%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">유보재고</th>
-                                                    <th scope="col" className="w-[12%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center">하자재고</th>
+                                                    <th scope="col" onClick={makeSortClick('itemName', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[20%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-left cursor-pointer select-none hover:bg-slate-100">상품명<SortArrow active={wkSortKey === 'itemName'} dir={wkSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('stock', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center cursor-pointer select-none hover:bg-slate-100">가용재고<SortArrow active={wkSortKey === 'stock'} dir={wkSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('safeStock', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center bg-slate-200/50 cursor-pointer select-none hover:bg-slate-300/40">안전재고<SortArrow active={wkSortKey === 'safeStock'} dir={wkSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('_outboundToDisplay', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[13%] px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight cursor-pointer select-none hover:bg-slate-100">{wkViewMode === 'period' ? `출고수량(${wkSelectedPeriod}일)` : '지정일 출고수량'}<SortArrow active={wkSortKey === '_outboundToDisplay'} dir={wkSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('_dailyToDisplay', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[9%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center cursor-pointer select-none hover:bg-slate-100">일평균<SortArrow active={wkSortKey === '_dailyToDisplay'} dir={wkSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('_availableDays', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[16%] px-4 py-4 text-[15px] font-extrabold text-orange-900 bg-orange-100/50 border-b-2 border-orange-200 text-center cursor-pointer select-none hover:bg-orange-100">예상 소진일<SortArrow active={wkSortKey === '_availableDays'} dir={wkSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('reservedStock', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[12%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center cursor-pointer select-none hover:bg-slate-100">유보재고<SortArrow active={wkSortKey === 'reservedStock'} dir={wkSortDir} /></th>
+                                                    <th scope="col" onClick={makeSortClick('defectiveStock', wkSortKey, wkSortDir, setWkSortKey, setWkSortDir)} className="w-[12%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center cursor-pointer select-none hover:bg-slate-100">하자재고<SortArrow active={wkSortKey === 'defectiveStock'} dir={wkSortDir} /></th>
                                                 </tr>
                                             </thead>
                                             <tbody>
