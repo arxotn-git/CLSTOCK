@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v68)</title>
+    <title>요미몬 재고 관리 (v69)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -336,16 +336,10 @@
             const [wkShowWarningOnly, setWkShowWarningOnly] = useState(false);
 
             // v66: 60일 이내 품절 필터 (30일 필터와 상호 배타적) + 헤더 클릭 정렬 상태
+            // v69: "60일 이내 품절" 버튼은 분석기준일과 무관하게, "30일 이내 품절"이 활성화되어 있을 때만(또는 60일 필터 자체가 활성화된 상태일 때) 노출됨.
+            // (v67의 분석기준일 기반 노출 조건은 잘못된 이해였음 — 되돌림)
             const [show60WarningOnly, setShow60WarningOnly] = useState(false);
             const [wkShow60WarningOnly, setWkShow60WarningOnly] = useState(false);
-
-            // v67: "60일 이내 품절" 버튼은 분석기준일이 정확히 "30일"일 때만 노출 (다른 기간에서는 일평균 계산 기준이 달라져 혼동을 주므로 숨김)
-            useEffect(() => {
-                if (!(viewMode === 'period' && selectedPeriod === 30)) setShow60WarningOnly(false);
-            }, [viewMode, selectedPeriod]);
-            useEffect(() => {
-                if (!(wkViewMode === 'period' && wkSelectedPeriod === 30)) setWkShow60WarningOnly(false);
-            }, [wkViewMode, wkSelectedPeriod]);
             const [clSortKey, setClSortKey] = useState(null);
             const [clSortDir, setClSortDir] = useState('asc');
             const [wkSortKey, setWkSortKey] = useState(null);
@@ -1457,7 +1451,7 @@
                                             >
                                                 {showWarningOnly ? '전체 보기' : '🚨 30일 이내 품절'}
                                             </button>
-                                            {viewMode === 'period' && selectedPeriod === 30 && (
+                                            {(showWarningOnly || show60WarningOnly) && (
                                                 <button 
                                                     onClick={() => { setShow60WarningOnly(!show60WarningOnly); if (!show60WarningOnly) setShowWarningOnly(false); }}
                                                     className={`px-3 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${show60WarningOnly ? 'bg-amber-50 text-amber-600 border-amber-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
@@ -1616,7 +1610,7 @@
                                     <button onClick={() => { setShowWarningOnly(!showWarningOnly); if (!showWarningOnly) setShow60WarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${showWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                                         {showWarningOnly ? '전체 보기' : '🚨 30일 이내 품절'}
                                     </button>
-                                    {viewMode === 'period' && selectedPeriod === 30 && (
+                                    {(showWarningOnly || show60WarningOnly) && (
                                         <button onClick={() => { setShow60WarningOnly(!show60WarningOnly); if (!show60WarningOnly) setShowWarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${show60WarningOnly ? 'bg-amber-50 text-amber-600 border-amber-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                                             {show60WarningOnly ? '전체 보기' : '⏳ 60일 이내 품절'}
                                         </button>
@@ -1740,7 +1734,7 @@
                                             <button onClick={() => { setWkShowWarningOnly(!wkShowWarningOnly); if (!wkShowWarningOnly) setWkShow60WarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${wkShowWarningOnly ? 'bg-red-50 text-red-600 border-red-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                                                 {wkShowWarningOnly ? '전체 보기' : '🚨 30일 이내 품절'}
                                             </button>
-                                            {wkViewMode === 'period' && wkSelectedPeriod === 30 && (
+                                            {(wkShowWarningOnly || wkShow60WarningOnly) && (
                                                 <button onClick={() => { setWkShow60WarningOnly(!wkShow60WarningOnly); if (!wkShow60WarningOnly) setWkShowWarningOnly(false); }} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${wkShow60WarningOnly ? 'bg-amber-50 text-amber-600 border-amber-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                                                     {wkShow60WarningOnly ? '전체 보기' : '⏳ 60일 이내 품절'}
                                                 </button>
