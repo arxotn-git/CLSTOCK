@@ -41,8 +41,8 @@ DOWNLOAD_DIR = "./downloads"
 # TODO: 위킵 로그인 페이지의 실제 주소로 바꿔주세요.
 WEEKEEP_LOGIN_URL = "https://fbw.wekeep.co.kr/fbw/member/login.do"
 
-# TODO: 로그인 성공 후, 재고 목록이 있는 페이지 주소로 바꿔주세요. (필요 없으면 비워두세요)
-WEEKEEP_INVENTORY_URL = ""
+# v6: 사용자가 실제 재고 페이지 주소를 확인해줌 — 이제 이 URL로 바로 이동합니다.
+WEEKEEP_INVENTORY_URL = "https://fbw.wekeep.co.kr/fbw/admin/v2/inventory/search.do"
 
 
 # =========================================================
@@ -90,13 +90,12 @@ def download_weekeep_excel() -> str:
 
             if WEEKEEP_INVENTORY_URL:
                 page.goto(WEEKEEP_INVENTORY_URL, wait_until="networkidle")
+                print("③ 재고 페이지 도착 (URL 직접 이동) — 엑셀저장 버튼을 클릭합니다...")
             else:
-                # v5: 로그인 후 대시보드에서 "재고" 메뉴를 클릭해서 재고 페이지로 이동
-                # (URL을 몰라도, 메뉴 문구로 찾아서 클릭하는 방식)
+                # v5: URL을 모를 때의 예비 방법 — 대시보드에서 "재고" 메뉴를 클릭해서 이동
                 page.get_by_text(re.compile("^재고$")).first.click()
                 page.wait_for_load_state("networkidle")
-
-            print("③ 재고 페이지 도착 — 엑셀저장 버튼을 클릭합니다...")
+                print("③ 재고 페이지 도착 (메뉴 클릭) — 엑셀저장 버튼을 클릭합니다...")
 
             # v5: 실제 버튼 문구가 "엑셀저장"으로 확인됨 (기존 "엑셀 다운로드" 추측이 틀렸음)
             with page.expect_download(timeout=60000) as download_info:
