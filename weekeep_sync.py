@@ -60,13 +60,25 @@ def download_weekeep_excel() -> str:
             print("① 위킵 로그인 페이지로 이동합니다...")
             page.goto(WEEKEEP_LOGIN_URL, wait_until="networkidle")
 
-            # v3: "input[type='text']"는 실제 HTML에 type 속성이 없는 입력창은 못 찾음 (많은 로그인폼이 이런 구조).
-            # → 비밀번호/체크박스/숨김/버튼류가 "아닌" 모든 입력창을 아이디 칸으로 간주하도록 조건을 넓힘.
-            password_field = page.locator("input[type='password']").first
-            id_field = page.locator(
-                "input:not([type='password']):not([type='checkbox']):not([type='radio'])"
-                ":not([type='hidden']):not([type='submit']):not([type='button'])"
-            ).first
+            # v4: 실제 오류 로그로 원인 확인됨 — 페이지에 "고객사명 검색"용 숨겨진 입력창(id="aiClientAuto")이
+            # 있는데, 이게 조건에 먼저 걸려서 계속 그 안 보이는 칸에 입력하려다 타임아웃났음.
+            # → 1) ":visible"을 붙여 "화면에 실제로 보이는" 입력창만 대상으로 하고,
+            #    2) 비밀번호 입력창과 "같은 form 안에 있는" 입력창으로 한 번 더 범위를 좁혀서 안정성을 높임.
+            password_field = page.locator("input[type='password']:visible").first
+            password_field.wait_for(state="visible", timeout=15000)
+
+            login_form = password_field.locator("xpath=ancestor::form[1]")
+            if login_form.count() > 0:
+                id_field = login_form.locator(
+                    "input:not([type='password']):not([type='checkbox']):not([type='radio'])"
+                    ":not([type='hidden']):not([type='submit']):not([type='button']):visible"
+                ).first
+            else:
+                # form 태그가 없는 구조라면, 전체 페이지에서 "보이는" 입력창 중에서 찾음
+                id_field = page.locator(
+                    "input:not([type='password']):not([type='checkbox']):not([type='radio'])"
+                    ":not([type='hidden']):not([type='submit']):not([type='button']):visible"
+                ).first
 
             id_field.fill(WEEKEEP_ID)
             password_field.fill(WEEKEEP_PW)
