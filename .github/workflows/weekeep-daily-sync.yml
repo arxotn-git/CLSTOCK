@@ -1,9 +1,11 @@
 name: 위킵 재고 자동 동기화
 
+# 실행 조건: 매일 자동 실행 + 언제든 수동으로도 실행 가능
 on:
   schedule:
+    # 매일 한국시간(KST) 새벽 3시에 실행 (UTC 기준 18시 = KST 다음날 03시)
     - cron: "0 18 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # GitHub 화면에서 "Run workflow" 버튼으로 수동 실행 가능
 
 jobs:
   sync:
