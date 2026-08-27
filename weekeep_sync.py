@@ -86,19 +86,26 @@ def download_weekeep_excel() -> str:
             # v2: 로그인 버튼 문구가 "시작하기"로 확인됨 (실제 화면 캡처 기준)
             page.get_by_role("button", name=re.compile("시작하기|로그인")).click()
             page.wait_for_load_state("networkidle")
-            print("② 로그인 완료 (아마도) — 재고 페이지로 이동합니다...")
+            print("② 로그인 완료 (아마도) — 재고 메뉴로 이동합니다...")
 
             if WEEKEEP_INVENTORY_URL:
                 page.goto(WEEKEEP_INVENTORY_URL, wait_until="networkidle")
+            else:
+                # v5: 로그인 후 대시보드에서 "재고" 메뉴를 클릭해서 재고 페이지로 이동
+                # (URL을 몰라도, 메뉴 문구로 찾아서 클릭하는 방식)
+                page.get_by_text(re.compile("^재고$")).first.click()
+                page.wait_for_load_state("networkidle")
 
-            # TODO: "엑셀 다운로드" 버튼의 실제 문구/위치에 맞게 수정하세요.
+            print("③ 재고 페이지 도착 — 엑셀저장 버튼을 클릭합니다...")
+
+            # v5: 실제 버튼 문구가 "엑셀저장"으로 확인됨 (기존 "엑셀 다운로드" 추측이 틀렸음)
             with page.expect_download(timeout=60000) as download_info:
-                page.get_by_text(re.compile("엑셀\\s*다운로드")).first.click()
+                page.get_by_text(re.compile("엑셀\\s*저장|엑셀\\s*다운로드")).first.click()
             download = download_info.value
 
             filepath = os.path.join(DOWNLOAD_DIR, download.suggested_filename or "wk_stock.xlsx")
             download.save_as(filepath)
-            print(f"③ 엑셀 다운로드 완료: {filepath}")
+            print(f"④ 엑셀 다운로드 완료: {filepath}")
             return filepath
 
         except Exception as e:
