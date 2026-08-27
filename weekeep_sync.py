@@ -39,7 +39,7 @@ APP_ID = "inventory-tracker-01"
 DOWNLOAD_DIR = "./downloads"
 
 # TODO: 위킵 로그인 페이지의 실제 주소로 바꿔주세요.
-WEEKEEP_LOGIN_URL = "https://www.wekeep.co.kr/login"
+WEEKEEP_LOGIN_URL = "https://fbw.wekeep.co.kr/fbw/member/login.do"
 
 # TODO: 로그인 성공 후, 재고 목록이 있는 페이지 주소로 바꿔주세요. (필요 없으면 비워두세요)
 WEEKEEP_INVENTORY_URL = ""
