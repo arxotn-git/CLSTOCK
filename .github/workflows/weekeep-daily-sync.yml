@@ -1,0 +1,30 @@
+name: 위킵 재고 자동 동기화
+
+on:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 필요한 패키지 설치
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: 위킵 재고 동기화 스크립트 실행
+        env:
+          WEEKEEP_ID: ${{ secrets.WEEKEEP_ID }}
+          WEEKEEP_PW: ${{ secrets.WEEKEEP_PW }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python weekeep_sync.py
