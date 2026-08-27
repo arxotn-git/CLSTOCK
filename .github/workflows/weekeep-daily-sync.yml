@@ -30,3 +30,11 @@ jobs:
           WEEKEEP_PW: ${{ secrets.WEEKEEP_PW }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: python weekeep_sync.py
+
+      - name: 실패 시 화면 캡처 첨부
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshot
+          path: debug/
+          retention-days: 7
