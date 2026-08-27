@@ -60,11 +60,13 @@ def download_weekeep_excel() -> str:
             print("① 위킵 로그인 페이지로 이동합니다...")
             page.goto(WEEKEEP_LOGIN_URL, wait_until="networkidle")
 
-            # v2: 화면 캡처로 실제 로그인 폼을 확인해서 수정함 (placeholder 텍스트를 추측하지 않고,
-            # input의 type 속성으로 찾는 방식이라 훨씬 안정적입니다)
+            # v3: "input[type='text']"는 실제 HTML에 type 속성이 없는 입력창은 못 찾음 (많은 로그인폼이 이런 구조).
+            # → 비밀번호/체크박스/숨김/버튼류가 "아닌" 모든 입력창을 아이디 칸으로 간주하도록 조건을 넓힘.
             password_field = page.locator("input[type='password']").first
-            # 비밀번호 입력창 "바로 앞에 있는" text/email 입력창 = 아이디 입력창
-            id_field = page.locator("input[type='text'], input[type='email']").first
+            id_field = page.locator(
+                "input:not([type='password']):not([type='checkbox']):not([type='radio'])"
+                ":not([type='hidden']):not([type='submit']):not([type='button'])"
+            ).first
 
             id_field.fill(WEEKEEP_ID)
             password_field.fill(WEEKEEP_PW)
