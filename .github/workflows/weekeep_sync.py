@@ -56,33 +56,50 @@ def download_weekeep_excel() -> str:
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
 
-        print("① 위킵 로그인 페이지로 이동합니다...")
-        page.goto(WEEKEEP_LOGIN_URL, wait_until="networkidle")
+        try:
+            print("① 위킵 로그인 페이지로 이동합니다...")
+            page.goto(WEEKEEP_LOGIN_URL, wait_until="networkidle")
 
-        # TODO: 아래 두 줄의 선택자(따옴표 안 값)를 실제 위킵 로그인 폼에 맞게 수정하세요.
-        # 지금은 흔한 패턴(아이디/비밀번호 placeholder)으로 추측해서 넣어둔 상태입니다.
-        page.get_by_placeholder(re.compile("아이디|이메일|ID", re.IGNORECASE)).fill(WEEKEEP_ID)
-        page.get_by_placeholder(re.compile("비밀번호|password", re.IGNORECASE)).fill(WEEKEEP_PW)
+            # v2: 화면 캡처로 실제 로그인 폼을 확인해서 수정함 (placeholder 텍스트를 추측하지 않고,
+            # input의 type 속성으로 찾는 방식이라 훨씬 안정적입니다)
+            password_field = page.locator("input[type='password']").first
+            # 비밀번호 입력창 "바로 앞에 있는" text/email 입력창 = 아이디 입력창
+            id_field = page.locator("input[type='text'], input[type='email']").first
 
-        # TODO: 로그인 버튼 문구가 다르면 "로그인" 부분을 실제 버튼 문구로 바꾸세요.
-        page.get_by_role("button", name=re.compile("로그인")).click()
-        page.wait_for_load_state("networkidle")
-        print("② 로그인 완료 (아마도) — 재고 페이지로 이동합니다...")
+            id_field.fill(WEEKEEP_ID)
+            password_field.fill(WEEKEEP_PW)
 
-        if WEEKEEP_INVENTORY_URL:
-            page.goto(WEEKEEP_INVENTORY_URL, wait_until="networkidle")
+            # v2: 로그인 버튼 문구가 "시작하기"로 확인됨 (실제 화면 캡처 기준)
+            page.get_by_role("button", name=re.compile("시작하기|로그인")).click()
+            page.wait_for_load_state("networkidle")
+            print("② 로그인 완료 (아마도) — 재고 페이지로 이동합니다...")
 
-        # TODO: "엑셀 다운로드" 버튼의 실제 문구/위치에 맞게 수정하세요.
-        with page.expect_download(timeout=60000) as download_info:
-            page.get_by_text(re.compile("엑셀\\s*다운로드")).first.click()
-        download = download_info.value
+            if WEEKEEP_INVENTORY_URL:
+                page.goto(WEEKEEP_INVENTORY_URL, wait_until="networkidle")
 
-        filepath = os.path.join(DOWNLOAD_DIR, download.suggested_filename or "wk_stock.xlsx")
-        download.save_as(filepath)
-        print(f"③ 엑셀 다운로드 완료: {filepath}")
+            # TODO: "엑셀 다운로드" 버튼의 실제 문구/위치에 맞게 수정하세요.
+            with page.expect_download(timeout=60000) as download_info:
+                page.get_by_text(re.compile("엑셀\\s*다운로드")).first.click()
+            download = download_info.value
 
-        browser.close()
-        return filepath
+            filepath = os.path.join(DOWNLOAD_DIR, download.suggested_filename or "wk_stock.xlsx")
+            download.save_as(filepath)
+            print(f"③ 엑셀 다운로드 완료: {filepath}")
+            return filepath
+
+        except Exception as e:
+            # v2: 실패한 화면을 그대로 사진(스크린샷)과 html로 저장.
+            # GitHub Actions가 이 파일들을 "Artifacts"로 올려주므로, 어디서 왜 막혔는지 눈으로 바로 확인 가능.
+            os.makedirs("debug", exist_ok=True)
+            page.screenshot(path="debug/failure_screenshot.png", full_page=True)
+            with open("debug/failure_page.html", "w", encoding="utf-8") as f:
+                f.write(page.content())
+            print(f"❌ 실패한 지점: {e}")
+            print("→ debug 폴더에 실패 시점 화면 캡처를 저장했습니다 (Actions 결과 화면 하단 Artifacts에서 다운로드 가능)")
+            raise
+
+        finally:
+            browser.close()
 
 
 # =========================================================
