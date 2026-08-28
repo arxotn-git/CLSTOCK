@@ -60,33 +60,26 @@ def download_weekeep_excel() -> str:
             print("① 위킵 로그인 페이지로 이동합니다...")
             page.goto(WEEKEEP_LOGIN_URL, wait_until="networkidle")
 
-            # v4: 실제 오류 로그로 원인 확인됨 — 페이지에 "고객사명 검색"용 숨겨진 입력창(id="aiClientAuto")이
-            # 있는데, 이게 조건에 먼저 걸려서 계속 그 안 보이는 칸에 입력하려다 타임아웃났음.
-            # → 1) ":visible"을 붙여 "화면에 실제로 보이는" 입력창만 대상으로 하고,
-            #    2) 비밀번호 입력창과 "같은 form 안에 있는" 입력창으로 한 번 더 범위를 좁혀서 안정성을 높임.
-            password_field = page.locator("input[type='password']:visible").first
-            password_field.wait_for(state="visible", timeout=15000)
-
-            login_form = password_field.locator("xpath=ancestor::form[1]")
-            if login_form.count() > 0:
-                id_field = login_form.locator(
-                    "input:not([type='password']):not([type='checkbox']):not([type='radio'])"
-                    ":not([type='hidden']):not([type='submit']):not([type='button']):visible"
-                ).first
-            else:
-                # form 태그가 없는 구조라면, 전체 페이지에서 "보이는" 입력창 중에서 찾음
-                id_field = page.locator(
-                    "input:not([type='password']):not([type='checkbox']):not([type='radio'])"
-                    ":not([type='hidden']):not([type='submit']):not([type='button']):visible"
-                ).first
-
-            id_field.fill(WEEKEEP_ID)
-            password_field.fill(WEEKEEP_PW)
-
-            # v2: 로그인 버튼 문구가 "시작하기"로 확인됨 (실제 화면 캡처 기준)
-            page.get_by_role("button", name=re.compile("시작하기|로그인")).click()
+            # v7: 실패 화면 캡처의 실제 HTML을 직접 열어서 정확한 필드 이름을 확인함 (Spring Security 로그인 폼).
+            # 더 이상 추측 없이 100% 정확한 이름으로 채웁니다.
+            #   <input type="text" name="j_username" placeholder="아이디">
+            #   <input type="password" name="j_password" placeholder="비밀번호">
+            #   <input class="start" type="submit" value="시작하기">
+            page.locator("input[name='j_username']").wait_for(state="visible", timeout=15000)
+            page.fill("input[name='j_username']", WEEKEEP_ID)
+            page.fill("input[name='j_password']", WEEKEEP_PW)
+            page.click("input[type='submit']")
             page.wait_for_load_state("networkidle")
-            print("② 로그인 완료 (아마도) — 재고 메뉴로 이동합니다...")
+
+            # v7: "로그인 완료 (아마도)"가 아니라, 진짜로 로그인 폼이 사라졌는지(=성공했는지) 확인.
+            # 아직도 아이디/비밀번호 입력창이 보이면 로그인이 실패한 것으로 간주하고 바로 에러를 발생시킴.
+            still_on_login = page.locator("input[name='j_username']").count() > 0
+            if still_on_login:
+                raise RuntimeError(
+                    f"로그인 실패로 보입니다 (여전히 로그인 화면). 현재 주소: {page.url} "
+                    f"— WEEKEEP_ID/WEEKEEP_PW 값이 정확한지 GitHub Secrets를 다시 확인해주세요."
+                )
+            print(f"② 로그인 성공 확인됨 (현재 주소: {page.url})")
 
             if WEEKEEP_INVENTORY_URL:
                 page.goto(WEEKEEP_INVENTORY_URL, wait_until="networkidle")
