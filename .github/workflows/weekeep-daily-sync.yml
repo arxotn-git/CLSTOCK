@@ -28,7 +28,7 @@ jobs:
         env:
           WEEKEEP_ID: ${{ secrets.WEEKEEP_ID }}
           WEEKEEP_PW: ${{ secrets.WEEKEEP_PW }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         run: python weekeep_sync.py
 
       - name: 실패 시 화면 캡처 첨부
