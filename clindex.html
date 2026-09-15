@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v72)</title>
+    <title>요미몬 재고 관리 (v73)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -296,6 +296,9 @@
             );
         };
 
+        // v73: 위킵 이관 완료 — CL 시스템/위킵 탭을 화면에서 숨김 (데이터·로직은 그대로 유지, 나중에 true로 되돌리면 즉시 복구)
+        const SHOW_CL_WK_TABS = false;
+
         const App = () => {
             const [isAuthenticated, setIsAuthenticated] = useState(() => {
                 return localStorage.getItem('inventory_auth_pin') === 'true';
@@ -346,6 +349,11 @@
             const [wkSortDir, setWkSortDir] = useState('asc');
             const [totalSortKey, setTotalSortKey] = useState(null);
             const [totalSortDir, setTotalSortDir] = useState('asc');
+
+            // v73: 재고 비교 모드 — 현재 조회 중인 재고와, 별도로 고른 과거 시점 재고를 나란히 비교
+            const [compareMode, setCompareMode] = useState(false);
+            const [compareClHistoryId, setCompareClHistoryId] = useState(null);
+            const [compareWkHistoryId, setCompareWkHistoryId] = useState(null);
 
             // 정렬 헤더 공용 헬퍼: 값이 문자열이면 가나다순, 숫자면 크기순. null/undefined는 항상 맨 뒤로.
             const applySort = (items, key, dir) => {
@@ -1213,6 +1221,36 @@
                 return items;
             }, [processedItemsBase, wkCurrentData, wkDailyOutboundMap, viewMode, selectedPeriod, customStartDate, customEndDate, currentData, totalSearchKeyword, showWarningOnly, show60WarningOnly, totalSortKey, totalSortDir]);
 
+            // v73: 재고 비교용 — 비교 시점으로 고른 CL/위킵 히스토리에서 품목별 재고를 뽑아 Map으로 구성
+            const compareStockMap = useMemo(() => {
+                const map = new Map();
+                if (compareClHistoryId) {
+                    const h = histories.find(hh => hh.id === compareClHistoryId);
+                    if (h) {
+                        h.items.forEach(item => {
+                            if (!item.itemName || !item.itemName.match(/^(\d+)/)) return;
+                            const cur = map.get(item.itemName) || { clStock: 0, wkStock: 0 };
+                            cur.clStock = item.stock || 0;
+                            map.set(item.itemName, cur);
+                        });
+                    }
+                }
+                if (compareWkHistoryId) {
+                    const h = wkHistories.find(hh => hh.id === compareWkHistoryId);
+                    if (h) {
+                        h.items.forEach(item => {
+                            if (!item.itemName || !item.itemName.match(/^(\d+)/)) return;
+                            const cur = map.get(item.itemName) || { clStock: 0, wkStock: 0 };
+                            cur.wkStock = item.stock || 0;
+                            map.set(item.itemName, cur);
+                        });
+                    }
+                }
+                return map;
+            }, [histories, wkHistories, compareClHistoryId, compareWkHistoryId]);
+
+            const compareActive = compareMode && (compareClHistoryId || compareWkHistoryId);
+
             const combinedSummary = useMemo(() => {
                 const all = combinedItems;
                 const clTotal = all.reduce((sum, i) => sum + i.clStock, 0);
@@ -1372,12 +1410,16 @@
                             <button onClick={() => setActiveTab('total')} className={`px-5 py-3 text-sm font-extrabold border-b-[3px] transition-colors flex items-center gap-2 ${activeTab === 'total' ? 'border-slate-800 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
                                 🧮 총재고 (CL+위킵)
                             </button>
-                            <button onClick={() => setActiveTab('cl')} className={`px-5 py-3 text-sm font-extrabold border-b-[3px] transition-colors flex items-center gap-2 ${activeTab === 'cl' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-                                📦 CL 시스템
-                            </button>
-                            <button onClick={() => setActiveTab('weekeep')} className={`px-5 py-3 text-sm font-extrabold border-b-[3px] transition-colors flex items-center gap-2 ${activeTab === 'weekeep' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-                                🚚 위킵 (FBW)
-                            </button>
+                            {SHOW_CL_WK_TABS && (
+                                <>
+                                    <button onClick={() => setActiveTab('cl')} className={`px-5 py-3 text-sm font-extrabold border-b-[3px] transition-colors flex items-center gap-2 ${activeTab === 'cl' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                        📦 CL 시스템
+                                    </button>
+                                    <button onClick={() => setActiveTab('weekeep')} className={`px-5 py-3 text-sm font-extrabold border-b-[3px] transition-colors flex items-center gap-2 ${activeTab === 'weekeep' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                        🚚 위킵 (FBW)
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
 
@@ -1386,14 +1428,10 @@
                         {}
                         {activeTab === 'total' && (
                             <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
                                         <p className="text-xs font-bold text-slate-400">전체 품목 수</p>
                                         <p className="text-2xl font-black text-slate-800 mt-1">{combinedSummary.itemCount.toLocaleString()}개</p>
-                                    </div>
-                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-indigo-500">
-                                        <p className="text-xs font-bold text-slate-400">CL 시스템 재고</p>
-                                        <p className="text-2xl font-black text-indigo-700 mt-1">{combinedSummary.clTotal.toLocaleString()}개</p>
                                     </div>
                                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-orange-500">
                                         <p className="text-xs font-bold text-slate-400">위킵(FBW) 재고</p>
@@ -1405,6 +1443,8 @@
                                     </div>
                                 </div>
 
+                                {/* v73: 위킵 이관 완료 — 진행률 카드 숨김 (SHOW_CL_WK_TABS를 true로 되돌리면 함께 복구하시면 됩니다) */}
+                                {SHOW_CL_WK_TABS && (
                                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                                     <div className="flex justify-between items-center mb-2">
                                         <h3 className="text-sm font-extrabold text-slate-700">위킵 이관 진행률</h3>
@@ -1417,6 +1457,7 @@
                                         <p className="text-xs text-slate-400 mt-3">⚠️ {combinedSummary.unmatchedCount}개 품목이 CL 또는 위킵 중 한쪽 시스템에만 존재합니다 (표 우측 끝 상태 뱃지 확인).</p>
                                     )}
                                 </div>
+                                )}
 
                                 <div className="flex flex-col gap-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 border-l-4 border-l-slate-800">
                                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -1477,6 +1518,16 @@
                                             <span className="text-xs font-bold text-slate-400 mr-1">🕐 과거 시점 재고 조회:</span>
                                             <HistoryDatePicker histories={histories} selectedId={selectedHistoryId} onSelect={setSelectedHistoryId} theme="indigo" label="CL" />
                                             <HistoryDatePicker histories={wkHistories} selectedId={wkSelectedHistoryId} onSelect={setWkSelectedHistoryId} theme="orange" label="위킵" />
+                                            <button
+                                                onClick={() => {
+                                                    const next = !compareMode;
+                                                    setCompareMode(next);
+                                                    if (!next) { setCompareClHistoryId(null); setCompareWkHistoryId(null); }
+                                                }}
+                                                className={`px-3 py-2.5 rounded-lg text-sm font-bold transition-colors border shadow-sm ${compareMode ? 'bg-purple-50 text-purple-700 border-purple-300' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                                            >
+                                                {compareMode ? '재고 비교 끄기' : '📊 재고 비교'}
+                                            </button>
                                         </div>
 
                                         <div className="flex flex-wrap items-center justify-end gap-2 w-full xl:w-auto">
@@ -1507,6 +1558,15 @@
                                             <div className="bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700">총 <span className="text-indigo-600">{combinedItems.length}</span>개</div>
                                         </div>
                                     </div>
+
+                                    {compareMode && (
+                                        <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-slate-100 bg-purple-50/50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
+                                            <span className="text-xs font-bold text-purple-500 mr-1">📊 비교할 과거 시점 선택:</span>
+                                            <HistoryDatePicker histories={histories} selectedId={compareClHistoryId} onSelect={setCompareClHistoryId} theme="indigo" label="CL 비교" />
+                                            <HistoryDatePicker histories={wkHistories} selectedId={compareWkHistoryId} onSelect={setCompareWkHistoryId} theme="orange" label="위킵 비교" />
+                                            {!compareActive && <span className="text-xs text-purple-400">시점을 선택하면 표의 안전재고 칸이 재고비교로 바뀝니다.</span>}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
@@ -1518,7 +1578,11 @@
                                                     <th scope="col" onClick={makeSortClick('total', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[8%]' : 'w-[10%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-900 text-center bg-slate-200/50 transition-all duration-300 cursor-pointer select-none hover:bg-slate-300/40`}>합계(총재고)<SortArrow active={totalSortKey === 'total'} dir={totalSortDir} /></th>
                                                     {showDetailedStock && <th scope="col" onClick={makeSortClick('clStock', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className="w-[8%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-indigo-700 text-center bg-indigo-50/50 transition-all duration-300 cursor-pointer select-none hover:bg-indigo-100">CL 재고<SortArrow active={totalSortKey === 'clStock'} dir={totalSortDir} /></th>}
                                                     {showDetailedStock && <th scope="col" onClick={makeSortClick('wkStock', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className="w-[8%] px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-orange-600 text-center bg-orange-50/50 transition-all duration-300 cursor-pointer select-none hover:bg-orange-100">위킵 재고<SortArrow active={totalSortKey === 'wkStock'} dir={totalSortDir} /></th>}
-                                                    <th scope="col" onClick={makeSortClick('safeStock', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[8%]' : 'w-[10%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>안전재고<SortArrow active={totalSortKey === 'safeStock'} dir={totalSortDir} /></th>
+                                                    {compareActive ? (
+                                                        <th scope="col" className={`${showDetailedStock ? 'w-[10%]' : 'w-[12%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-purple-300 text-purple-700 text-center bg-purple-50 transition-all duration-300`}>재고비교</th>
+                                                    ) : (
+                                                        <th scope="col" onClick={makeSortClick('safeStock', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[8%]' : 'w-[10%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>안전재고<SortArrow active={totalSortKey === 'safeStock'} dir={totalSortDir} /></th>
+                                                    )}
                                                     <th scope="col" onClick={makeSortClick('_outboundToDisplay', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[12%]' : 'w-[16%]'} px-4 py-3 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center leading-tight transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>{viewMode === 'period' ? `출고수량(${selectedPeriod}일)` : '지정일 출고수량'}<SortArrow active={totalSortKey === '_outboundToDisplay'} dir={totalSortDir} /></th>
                                                     <th scope="col" onClick={makeSortClick('_dailyToDisplay', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[10%]' : 'w-[12%]'} px-4 py-4 text-[15px] font-extrabold border-b-2 border-slate-300 text-slate-800 text-center transition-all duration-300 cursor-pointer select-none hover:bg-slate-100`}>일평균<SortArrow active={totalSortKey === '_dailyToDisplay'} dir={totalSortDir} /></th>
                                                     <th scope="col" onClick={makeSortClick('_combinedAvailableDays', totalSortKey, totalSortDir, setTotalSortKey, setTotalSortDir)} className={`${showDetailedStock ? 'w-[14%]' : 'w-[16%]'} px-4 py-4 text-[15px] font-extrabold text-indigo-900 bg-indigo-100/50 border-b-2 border-indigo-200 text-center transition-all duration-300 cursor-pointer select-none hover:bg-indigo-100`}>예상 소진일<SortArrow active={totalSortKey === '_combinedAvailableDays'} dir={totalSortDir} /></th>
@@ -1535,7 +1599,26 @@
                                                                 <td className="px-4 py-4 text-center font-black text-[15px] text-slate-900 bg-slate-50/50">{item.total.toLocaleString()}</td>
                                                                 {showDetailedStock && <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-700' : 'text-indigo-600'}`}>{item.clStock.toLocaleString()}</td>}
                                                                 {showDetailedStock && <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-700' : 'text-orange-500'}`}>{item.wkStock.toLocaleString()}</td>}
-                                                                <td className="px-4 py-4 text-center font-black text-[15px] text-slate-500">{item.safeStock.toLocaleString()}</td>
+                                                                {compareActive ? (
+                                                                    <td className="px-4 py-4 text-center bg-purple-50/30">
+                                                                        {(() => {
+                                                                            const cmp = compareStockMap.get(item.itemName);
+                                                                            if (!cmp) return <span className="text-slate-300 text-xs">데이터 없음</span>;
+                                                                            const cmpTotal = cmp.clStock + cmp.wkStock;
+                                                                            const delta = item.total - cmpTotal;
+                                                                            const deltaColor = delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-red-600' : 'text-slate-400';
+                                                                            const deltaSign = delta > 0 ? '▲' : delta < 0 ? '▼' : '－';
+                                                                            return (
+                                                                                <div className="flex flex-col items-center leading-tight">
+                                                                                    <span className="font-black text-[15px] text-purple-700">{cmpTotal.toLocaleString()}</span>
+                                                                                    <span className={`text-[11px] font-bold ${deltaColor}`}>{deltaSign} {Math.abs(delta).toLocaleString()}</span>
+                                                                                </div>
+                                                                            );
+                                                                        })()}
+                                                                    </td>
+                                                                ) : (
+                                                                    <td className="px-4 py-4 text-center font-black text-[15px] text-slate-500">{item.safeStock.toLocaleString()}</td>
+                                                                )}
                                                                 <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-800' : 'text-slate-700'}`}>{item._outboundToDisplay.toLocaleString()}</td>
                                                                 <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-700' : 'text-slate-600'}`}>{item._outboundToDisplay > 0 ? item._dailyToDisplay.toFixed(1) : '-'}</td>
                                                                 <td className={`px-4 py-4 text-center font-black text-[15px] ${isWarning ? 'text-red-600' : 'text-indigo-600'}`}>
