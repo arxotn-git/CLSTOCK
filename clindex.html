@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>요미몬 재고 관리 (v76)</title>
+    <title>요미몬 재고 관리 (v77)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -1407,7 +1407,7 @@
                                 className="text-xl font-extrabold text-slate-800 flex items-center gap-2 cursor-pointer hover:opacity-70 transition-opacity"
                                 title="새로고침"
                             >
-                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v76)</span>
+                                📊 요미몬 재고 관리 <span className="text-slate-400 font-semibold text-sm">(v77)</span>
                             </h1>
                             
                             <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
@@ -1459,7 +1459,8 @@
                         {}
                         {activeTab === 'total' && (
                             <div className="space-y-6">
-                                {/* v75: 세로 공간 절약 — 3개 요약값을 한 줄짜리 얇은 스트립으로 통합 */}
+                                {/* v77: 요약 스트립 비활성화 (SHOW_CL_WK_TABS를 true로 되돌리면 함께 복구) */}
+                                {SHOW_CL_WK_TABS && (
                                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 px-5 py-3 flex flex-wrap items-center gap-x-8 gap-y-2">
                                     <div className="flex items-baseline gap-2">
                                         <span className="text-xs font-bold text-slate-400">전체 품목 수</span>
@@ -1476,6 +1477,7 @@
                                         <span className="text-lg font-black text-slate-900">{combinedSummary.grandTotal.toLocaleString()}개</span>
                                     </div>
                                 </div>
+                                )}
 
                                 {/* v73: 위킵 이관 완료 — 진행률 카드 숨김 (SHOW_CL_WK_TABS를 true로 되돌리면 함께 복구하시면 됩니다) */}
                                 {SHOW_CL_WK_TABS && (
